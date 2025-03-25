@@ -29,7 +29,9 @@ export default function UserSelector({ onSelectUser }: UserSelectorProps) {
     "carla",
     "carled",
     "facu",
-    "jose"
+    "jose",
+    "fede",
+    "juan"
   ]
 
   useEffect(() => {

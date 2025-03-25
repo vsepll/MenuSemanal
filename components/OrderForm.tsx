@@ -84,10 +84,27 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
 
   // Efecto para actualizar los pedidos cuando cambia el menú
   useEffect(() => {
+    // Solo corre este efecto si el usuario está logueado
+    if (!currentUser) return;
+    
+    // Verificar si hay menú guardado en localStorage para comparar
+    const savedMenuHash = localStorage.getItem('menuDataHash');
+    const currentMenuHash = JSON.stringify(menuData);
+    
     // Solo si realmente ha cambiado el menú (comparación profunda)
     const menuChanged = JSON.stringify(menuDataRef.current) !== JSON.stringify(menuData);
-    if (menuChanged) {
-      console.log("El menú ha cambiado, reiniciando todos los pedidos a 0");
+    
+    // Para evitar falsos positivos después de reinicios, comparamos también con localStorage
+    const isRealMenuChange = menuChanged && (savedMenuHash !== null && savedMenuHash !== currentMenuHash);
+    
+    // Si es la primera carga o no hay hash guardado, guardamos el hash actual
+    if (!savedMenuHash) {
+      localStorage.setItem('menuDataHash', currentMenuHash);
+    }
+    
+    if (isRealMenuChange) {
+      console.log("El menú ha cambiado realmente, reiniciando todos los pedidos a 0");
+      localStorage.setItem('menuDataHash', currentMenuHash);
       menuDataRef.current = menuData;
       
       // Reiniciar todos los pedidos a 0 cuando cambia el menú
@@ -157,6 +174,18 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
 
   // Obtener la fecha de inicio de la semana actual
   const getWeekStart = () => {
+    // Verificar si hay una semana personalizada guardada en localStorage
+    try {
+      const customWeekStart = localStorage.getItem('customWeekStart');
+      if (customWeekStart) {
+        console.log("Usando semana personalizada:", customWeekStart);
+        return customWeekStart;
+      }
+    } catch (e) {
+      console.error("Error al leer semana personalizada:", e);
+    }
+    
+    // Cálculo normal si no hay semana personalizada
     const now = new Date()
     const dayOfWeek = now.getDay()
     const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
@@ -173,90 +202,70 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       
       try {
         console.log("Cargando pedidos existentes para la semana:", getWeekStart(), "usuario:", currentUser);
+        
+        // Intentar cargar datos de localStorage primero como respaldo
+        let localOrdersLoaded = false;
+        try {
+          const savedOrdersData = localStorage.getItem(`orders_${getWeekStart()}_${currentUser}`);
+          if (savedOrdersData) {
+            const parsedOrders = JSON.parse(savedOrdersData);
+            if (parsedOrders && Object.keys(parsedOrders).length > 0) {
+              console.log("Se encontraron datos locales guardados, usando como respaldo inicial");
+              setOrders(parsedOrders);
+              localOrdersLoaded = true;
+              
+              // Marcar que tenemos datos de pedidos
+              localStorage.setItem('hasOrderData', 'true');
+            }
+          }
+        } catch (e) {
+          console.error("Error al cargar datos locales:", e);
+        }
+        
+        // Luego intentar cargar desde Supabase (incluso si ya cargamos de localStorage)
         const { data, error } = await supabase
           .from('menu_orders')
           .select('*')
           .eq('week_start', getWeekStart())
-          .eq('user_name', currentUser)
+          .eq('user_name', currentUser);
 
-        if (error) throw error
-
-        // Inicializar con el menú actual (todos en 0)
-        const newOrders = initializeOrders(menuData);
-        
-        if (data && data.length > 0) {
-          console.log("Pedidos cargados:", data.length);
-          
-          // Si hay opciones en los pedidos cargados que no existen en el menú actual,
-          // significa que el menú ha cambiado y debemos reiniciar todo
-          let menuChanged = false;
-          for (const order of data) {
-            if (menuData[order.day] && !menuData[order.day].includes(order.option)) {
-              console.log(`Opción '${order.option}' ya no existe en el menú actual para ${order.day}. El menú ha cambiado.`);
-              menuChanged = true;
-              break;
-            }
+        if (error) {
+          console.error("Error al cargar pedidos desde Supabase:", error);
+          // Si hay error pero ya cargamos datos locales, no mostramos error
+          if (!localOrdersLoaded) {
+            throw error;
           }
+        } else if (data && data.length > 0) {
+          console.log("Pedidos cargados desde Supabase:", data.length);
           
-          if (menuChanged) {
-            console.log("El menú ha cambiado, reiniciando todos los pedidos en la base de datos");
-            
-            // Eliminar todos los pedidos antiguos del usuario actual
-            const { error: deleteError } = await supabase
-              .from('menu_orders')
-              .delete()
-              .eq('week_start', getWeekStart())
-              .eq('user_name', currentUser);
+          // Marcar que tenemos datos de pedidos
+          localStorage.setItem('hasOrderData', 'true');
+          
+          // Inicializar con el menú actual (todos en 0)
+          const newOrders = initializeOrders(menuData);
+          
+          // Actualizar los valores con los datos cargados
+          data.forEach(order => {
+            if (newOrders[order.day] && menuData[order.day]?.includes(order.option)) {
+              newOrders[order.day].counts[order.option] = order.count;
               
-            if (deleteError) {
-              console.error("Error al eliminar pedidos antiguos:", deleteError);
-            }
-            
-            // También eliminar el resumen general para reiniciarlo
-            console.log("El menú ha cambiado, eliminando también el resumen general...");
-            const { error: deleteSummaryError } = await supabase
-              .from('order_summaries')
-              .delete()
-              .eq('week_start', getWeekStart())
-              .eq('user_name', 'general');
-              
-            if (deleteSummaryError) {
-              console.error("Error al eliminar resumen general:", deleteSummaryError);
-            } else {
-              console.log("Resumen general eliminado correctamente");
-              
-              // Crear un nuevo resumen vacío basado en el menú actual
-              const emptyOrderSummary = {
-                orders: Object.entries(newOrders).map(([day, data]) => ({
-                  day,
-                  counts: data.counts,
-                  comments: []
-                }))
-              };
-              
-              // Actualizar el resumen en la UI
-              setOrderSummary(emptyOrderSummary);
-            }
-            
-            // Mostrar notificación
-            setMenuResetNotification(true);
-            setTimeout(() => setMenuResetNotification(false), 5000);
-          } else {
-            // Cargar los pedidos existentes si el menú no ha cambiado
-            data.forEach(order => {
-              if (newOrders[order.day] && menuData[order.day]?.includes(order.option)) {
-                newOrders[order.day].counts[order.option] = order.count;
-                
-                // Asignar los comentarios solo si existen y pertenecen al usuario actual
-                if (order.comments && Array.isArray(order.comments) && order.user_name === currentUser) {
-                  newOrders[order.day].comments = order.comments;
-                }
+              // Asignar los comentarios si existen
+              if (order.comments && Array.isArray(order.comments)) {
+                newOrders[order.day].comments = order.comments;
               }
-            });
+            }
+          });
+          
+          // Guardar en localStorage para futura referencia
+          try {
+            localStorage.setItem(`orders_${getWeekStart()}_${currentUser}`, JSON.stringify(newOrders));
+          } catch (e) {
+            console.error("Error al guardar pedidos en localStorage:", e);
           }
+          
+          // Actualizar el estado con los pedidos cargados
+          setOrders(newOrders);
         }
-        
-        setOrders(newOrders);
       } catch (error) {
         console.error('Error loading orders:', error);
       } finally {
@@ -436,16 +445,26 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     try {
       // Actualizar optimistamente el estado local primero para una UI más responsiva
       const newCount = orders[day].counts[option] + 1;
-      setOrders(prev => ({
-        ...prev,
+      const updatedOrders = {
+        ...orders,
         [day]: {
-          ...prev[day],
+          ...orders[day],
           counts: {
-            ...prev[day].counts,
+            ...orders[day].counts,
             [option]: newCount
           }
         }
-      }))
+      };
+      
+      setOrders(updatedOrders);
+      
+      // Guardar en localStorage para persistencia en caso de errores de red
+      try {
+        localStorage.setItem(`orders_${getWeekStart()}_${currentUser}`, JSON.stringify(updatedOrders));
+        localStorage.setItem('hasOrderData', 'true');
+      } catch (e) {
+        console.error("Error al guardar en localStorage:", e);
+      }
 
       // Verificar primero si el registro existe
       const { data: existingData, error: checkError } = await supabase
@@ -526,16 +545,26 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         const newCount = Math.max(0, orders[day].counts[option] - 1);
         
         // Actualizar optimistamente el estado local primero
-        setOrders(prev => ({
-          ...prev,
+        const updatedOrders = {
+          ...orders,
           [day]: {
-            ...prev[day],
+            ...orders[day],
             counts: {
-              ...prev[day].counts,
+              ...orders[day].counts,
               [option]: newCount
             }
           }
-        }))
+        };
+        
+        setOrders(updatedOrders);
+        
+        // Guardar en localStorage para persistencia en caso de errores de red
+        try {
+          localStorage.setItem(`orders_${getWeekStart()}_${currentUser}`, JSON.stringify(updatedOrders));
+          localStorage.setItem('hasOrderData', 'true');
+        } catch (e) {
+          console.error("Error al guardar en localStorage:", e);
+        }
 
         // Verificar primero si el registro existe
         const { data: existingData, error: checkError } = await supabase
@@ -967,7 +996,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-refresh-summary="true">
       {/* Alerta de nuevo menú */}
       {menuResetNotification && (
         <div className="flex items-center gap-4 p-4 mb-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-700">
@@ -980,6 +1009,82 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           </div>
         </div>
       )}
+
+      {/* Botón para recargar los pedidos individuales */}
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={async () => {
+            if (!currentUser) {
+              alert('Por favor selecciona un usuario antes de realizar esta acción');
+              return;
+            }
+            
+            setLoading(true);
+            
+            try {
+              console.log("Recargando pedidos para:", currentUser, "semana:", getWeekStart());
+              
+              // Limpiar localStorage para forzar recarga total
+              localStorage.removeItem(`orders_${getWeekStart()}_${currentUser}`);
+              
+              // Cargar directamente de Supabase
+              const { data, error } = await supabase
+                .from('menu_orders')
+                .select('*')
+                .eq('week_start', getWeekStart())
+                .eq('user_name', currentUser);
+              
+              if (error) throw error;
+              
+              // Inicializar con el menú actual (todos en 0)
+              const newOrders = initializeOrders(menuData);
+              
+              if (data && data.length > 0) {
+                console.log("Pedidos recargados correctamente:", data.length);
+                
+                // Actualizar los valores con los datos cargados
+                data.forEach(order => {
+                  if (newOrders[order.day] && menuData[order.day]?.includes(order.option)) {
+                    newOrders[order.day].counts[order.option] = order.count;
+                    
+                    // Asignar los comentarios si existen
+                    if (order.comments && Array.isArray(order.comments)) {
+                      newOrders[order.day].comments = order.comments;
+                    }
+                  }
+                });
+                
+                // Guardar en localStorage para futura referencia
+                try {
+                  localStorage.setItem(`orders_${getWeekStart()}_${currentUser}`, JSON.stringify(newOrders));
+                  localStorage.setItem('hasOrderData', 'true');
+                } catch (e) {
+                  console.error("Error al guardar pedidos en localStorage:", e);
+                }
+              } else {
+                console.log("No se encontraron pedidos para el usuario");
+              }
+              
+              // Actualizar el estado con los pedidos cargados (o con todos en 0 si no hay datos)
+              setOrders(newOrders);
+              
+              alert("¡Pedidos actualizados correctamente!");
+              
+            } catch (error) {
+              console.error("Error al recargar pedidos:", error);
+              alert("Error al recargar tus pedidos. Por favor, intenta de nuevo.");
+            } finally {
+              setLoading(false);
+            }
+          }}
+          className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 flex items-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>Recargar mis pedidos</span>
+        </button>
+      </div>
 
       {/* Mensaje informativo sobre horario límite */}
       <div className="flex items-center gap-4 p-4 mb-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
@@ -1125,6 +1230,16 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       ))}
 
       <div className="mt-8 flex flex-wrap gap-4 justify-end">
+        <button
+          onClick={refreshSummary}
+          data-refresh-button
+          className="px-5 py-3 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-xl hover:from-gray-600 hover:to-gray-700 transition-all duration-200 flex items-center gap-2 shadow-md"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>Actualizar Resumen</span>
+        </button>
         <button
           onClick={handleSubmit}
           className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 flex items-center gap-2 shadow-md"

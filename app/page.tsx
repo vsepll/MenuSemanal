@@ -46,15 +46,40 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<string | null>(null)
   const [showUploader, setShowUploader] = useState(false)
   const loadingMenuRef = useRef<boolean>(false)
+  const [customWeekStart, setCustomWeekStart] = useState<string | null>(
+    typeof localStorage !== 'undefined' ? localStorage.getItem('customWeekStart') : null
+  )
+  const [showWeekSelector, setShowWeekSelector] = useState(false)
+
+  const getWeekStart = () => {
+    if (customWeekStart) {
+      return customWeekStart;
+    }
+    
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+    return new Date(now.setDate(diff)).toISOString().split('T')[0]
+  }
+
+  useEffect(() => {
+    try {
+      const savedWeek = localStorage.getItem('customWeekStart');
+      if (savedWeek && savedWeek !== customWeekStart) {
+        console.log(`Cargando semana personalizada desde localStorage: ${savedWeek}`);
+        setCustomWeekStart(savedWeek);
+      }
+    } catch (e) {
+      console.error("Error al cargar semana personalizada:", e);
+    }
+  }, []);
 
   const setMenuDataWithTracking = (data: MenuDataType, id?: number) => {
     console.log("Actualizando menú localmente, ID:", id || "local")
     setMenuData(data)
   }
 
-  // Función para cargar el menú más reciente (usada al inicio y cuando se carga un nuevo menú)
   const loadLatestMenu = async () => {
-    // Evitar cargas concurrentes
     if (loadingMenuRef.current) {
       console.log("Ya hay una carga de menú en progreso, omitiendo");
       return;
@@ -64,6 +89,18 @@ export default function Home() {
     
     try {
       console.log("Cargando el menú más reciente desde la base de datos...")
+      
+      let fallbackMenu = null;
+      try {
+        const savedMenu = localStorage.getItem('cachedMenu');
+        if (savedMenu) {
+          fallbackMenu = JSON.parse(savedMenu);
+          console.log("Se encontró menú en caché local que se usará si falla la conexión");
+        }
+      } catch (e) {
+        console.error("Error al leer menú de localStorage:", e);
+      }
+      
       const { data, error } = await supabase
         .from('weekly_menus')
         .select('id, menu_data, week_start, updated_at')
@@ -71,7 +108,17 @@ export default function Home() {
         .limit(1)
 
       if (error) {
-        throw error
+        console.error("Error al cargar menú de Supabase:", error);
+        
+        if (fallbackMenu) {
+          console.log("Usando menú en caché debido a error de conexión");
+          setMenuDataWithTracking(fallbackMenu);
+          setLoading(false);
+          loadingMenuRef.current = false;
+          return;
+        }
+        
+        throw error;
       }
 
       if (data && data.length > 0) {
@@ -81,7 +128,6 @@ export default function Home() {
         const processedData: MenuDataType = {}
 
         Object.entries(receivedData).forEach(([key, value]) => {
-          // Normalizar la clave del día (puede estar en mayúsculas, etc.)
           let normalizedKey = key.toUpperCase();
           console.log(`Procesando día: ${key} -> ${normalizedKey}`);
           const normalizedDay = dayMappings[normalizedKey as keyof typeof dayMappings]
@@ -94,10 +140,16 @@ export default function Home() {
           }
         })
 
-        // Solo actualizar si hay datos válidos
         if (Object.keys(processedData).length > 0) {
           console.log("Menú procesado correctamente con", Object.keys(processedData).length, "días:", Object.keys(processedData));
           setMenuDataWithTracking(processedData, data[0].id);
+          
+          try {
+            localStorage.setItem('cachedMenu', JSON.stringify(processedData));
+            localStorage.setItem('menuLastUpdated', new Date().toISOString());
+          } catch (e) {
+            console.error("Error al guardar menú en localStorage:", e);
+          }
         } else {
           console.warn("El menú encontrado no tiene datos válidos, manteniendo el menú por defecto");
         }
@@ -112,17 +164,49 @@ export default function Home() {
     }
   }
 
-  // Solo cargar el menú al inicio de la aplicación
   useEffect(() => {
     loadLatestMenu()
     
-    // No hay suscripción en tiempo real, la aplicación solo carga el menú al iniciar
+    const verifyConnection = async () => {
+      try {
+        console.log("Verificando conexión con Supabase...");
+        
+        const { data, error } = await supabase
+          .from('menu_orders')
+          .select('count', { count: 'exact', head: true });
+        
+        if (error) {
+          console.error("Error de conexión con Supabase:", error);
+        } else {
+          console.log("Conexión a Supabase establecida correctamente");
+          
+          const hasSavedState = localStorage.getItem('hasOrderData');
+          
+          if (hasSavedState === 'true') {
+            console.log("Se detectaron datos de pedidos guardados. Forzando actualización de resumen...");
+            const orderForm = document.querySelector('[data-refresh-summary]');
+            if (orderForm) {
+              const refreshButton = orderForm.querySelector('[data-refresh-button]');
+              if (refreshButton) {
+                (refreshButton as HTMLElement).click();
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error al verificar la conexión:", error);
+      }
+    };
+    
+    const timer = setTimeout(() => {
+      verifyConnection();
+    }, 2000);
+    
     return () => {
-      // No hay nada que limpiar
+      clearTimeout(timer);
     }
   }, [])
 
-  // Manejar la selección de usuario
   const handleUserSelect = (userName: string) => {
     setCurrentUser(userName)
   }
@@ -160,6 +244,15 @@ export default function Home() {
 
         {currentUser && (
           <div className="mb-8 flex justify-end gap-4">
+            <button
+              onClick={() => setShowWeekSelector(!showWeekSelector)}
+              className="px-5 py-2.5 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-xl hover:from-yellow-600 hover:to-yellow-700 transition-all duration-200 flex items-center gap-2 shadow-md"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>{customWeekStart ? `Semana: ${customWeekStart}` : 'Cambiar Semana'}</span>
+            </button>
             <Link 
               href="/mis-pedidos" 
               className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 flex items-center gap-2 shadow-md"
@@ -170,7 +263,6 @@ export default function Home() {
               Ver Mis Pedidos
             </Link>
             
-            {/* Enlace al panel de administración */}
             <Link 
               href="/admin" 
               className="px-5 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-xl hover:from-gray-700 hover:to-gray-800 transition-all duration-200 flex items-center gap-2 shadow-md"
@@ -181,6 +273,107 @@ export default function Home() {
               </svg>
               Administración
             </Link>
+          </div>
+        )}
+
+        {showWeekSelector && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+            <h3 className="text-lg font-medium text-yellow-800 mb-3">Seleccionar semana</h3>
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <input 
+                  type="date" 
+                  value={customWeekStart || getWeekStart()}
+                  onChange={(e) => setCustomWeekStart(e.target.value)}
+                  className="w-full p-2 border border-yellow-300 rounded-lg"
+                />
+                <p className="text-xs text-yellow-700 mt-1">Selecciona el lunes de la semana que deseas ver</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setCustomWeekStart(null);
+                    localStorage.removeItem('customWeekStart');
+                    window.location.reload();
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                >
+                  Restablecer
+                </button>
+                <button
+                  onClick={() => {
+                    if (customWeekStart) {
+                      localStorage.setItem('customWeekStart', customWeekStart);
+                      window.location.reload();
+                    }
+                  }}
+                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
+                >
+                  Aplicar y recargar
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t border-yellow-200">
+              <h4 className="text-sm font-medium text-yellow-800 mb-2">Opciones avanzadas</h4>
+              <button
+                onClick={async () => {
+                  if (!currentUser) {
+                    alert('Por favor selecciona un usuario antes de realizar esta acción');
+                    return;
+                  }
+                  
+                  const confirmed = confirm(`ATENCIÓN: Esto eliminará TODOS los pedidos de la semana ${getWeekStart()}. Esta acción no se puede deshacer. ¿Estás seguro?`);
+                  
+                  if (!confirmed) return;
+                  
+                  try {
+                    setLoading(true);
+                    
+                    // Eliminamos todos los pedidos de esta semana
+                    const { error } = await supabase
+                      .from('menu_orders')
+                      .delete()
+                      .eq('week_start', getWeekStart());
+                      
+                    if (error) throw error;
+                    
+                    // También eliminamos el resumen general
+                    const { error: summaryError } = await supabase
+                      .from('order_summaries')
+                      .delete()
+                      .eq('week_start', getWeekStart())
+                      .eq('user_name', 'general');
+                      
+                    if (summaryError) {
+                      console.error("Error al eliminar resumen:", summaryError);
+                    }
+                    
+                    // Limpiar localStorage relacionado
+                    Object.keys(localStorage).forEach(key => {
+                      if (key.includes(getWeekStart()) || key === 'hasOrderData') {
+                        localStorage.removeItem(key);
+                      }
+                    });
+                    
+                    alert(`Todos los pedidos de la semana ${getWeekStart()} han sido eliminados. La página se recargará.`);
+                    window.location.reload();
+                    
+                  } catch (e: any) {
+                    console.error("Error al eliminar pedidos:", e);
+                    alert(`Error: ${e.message || 'Ocurrió un error desconocido'}`);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>Eliminar todos los pedidos de esta semana</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -200,6 +393,44 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const { data: weeksData, error: weeksError } = await supabase
+                          .from('menu_orders')
+                          .select('week_start')
+                          .order('week_start', { ascending: false });
+                        
+                        if (weeksError) throw weeksError;
+                        
+                        const uniqueWeeks = Array.from(new Set(weeksData?.map(item => item.week_start) || []));
+                        
+                        const now = new Date();
+                        const dayOfWeek = now.getDay();
+                        const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+                        const currentWeek = new Date(now.setDate(diff)).toISOString().split('T')[0];
+                        
+                        const { count, error: countError } = await supabase
+                          .from('menu_orders')
+                          .select('*', { count: 'exact', head: true })
+                          .eq('week_start', currentWeek);
+                        
+                        if (countError) throw countError;
+                        
+                        alert(`Diagnóstico de semanas:\n\nSemana actual calculada: ${currentWeek}\nRegistros en semana actual: ${count || 0}\n\nSemanas disponibles en Supabase:\n${uniqueWeeks.join('\n')}`);
+                        
+                      } catch (e: any) {
+                        console.error("Error en diagnóstico:", e);
+                        alert("Error al realizar diagnóstico: " + (e.message || "Error desconocido"));
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 rounded-xl hover:bg-purple-100 transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    <span>Diagnóstico</span>
+                  </button>
                   <button 
                     onClick={() => loadLatestMenu()} 
                     className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-100 transition-colors"
