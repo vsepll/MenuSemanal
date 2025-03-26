@@ -95,11 +95,13 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     const menuChanged = JSON.stringify(menuDataRef.current) !== JSON.stringify(menuData);
     
     // Para evitar falsos positivos después de reinicios, comparamos también con localStorage
+    // Verificar si realmente es un cambio de menú y no simplemente un cambio de semana
     const isRealMenuChange = menuChanged && (savedMenuHash !== null && savedMenuHash !== currentMenuHash);
     
     // Si es la primera carga o no hay hash guardado, guardamos el hash actual
     if (!savedMenuHash) {
       localStorage.setItem('menuDataHash', currentMenuHash);
+      menuDataRef.current = menuData;
     }
     
     if (isRealMenuChange) {
@@ -125,7 +127,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       // Eliminar el resumen general en la base de datos
       const resetSummaryInDatabase = async () => {
         try {
-          console.log("Eliminando resumen general en la base de datos...");
+          console.log("Eliminando resumen general en la base de datos debido a cambio de menú...");
           
           // Eliminar el resumen general actual
           const { error: deleteError } = await supabase
@@ -169,6 +171,9 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       setMenuResetNotification(true);
       // Ocultar la notificación después de 5 segundos
       setTimeout(() => setMenuResetNotification(false), 5000);
+    } else {
+      // Si no ha cambiado el menú, asegurarse de que menuDataRef esté actualizado
+      menuDataRef.current = menuData;
     }
   }, [menuData, currentUser]);
 

@@ -143,35 +143,54 @@ export default function ExcelUploader({ setMenuData, onMenuUploaded }: ExcelUplo
             const newId = responseData[0].id
             console.log("Menú guardado con ID:", newId)
             
-            // Limpiar pedidos antiguos para asegurar el reinicio a 0
+            // Guardar información del menú cargado en localStorage para persistencia
             try {
-              console.log("Limpiando pedidos anteriores para reiniciar contadores...")
-              const { error: deleteError } = await supabase
-                .from('menu_orders')
-                .delete()
-                .eq('week_start', weekStart)
+              localStorage.setItem('currentMenuId', String(newId));
+              localStorage.setItem('menuDataHash', JSON.stringify(processedData));
+              localStorage.setItem('menuLastUploaded', timestamp);
+            } catch (e) {
+              console.error("Error al guardar datos del menú en localStorage:", e);
+            }
+            
+            // Solo limpiar pedidos antiguos si explícitamente se desea reiniciar todo
+            const shouldClearOrders = confirm(
+              "¿Deseas eliminar todos los pedidos existentes y reiniciar los contadores a cero?\n\n" +
+              "- Selecciona 'OK' si quieres borrar todos los pedidos y comenzar de nuevo.\n" +
+              "- Selecciona 'Cancelar' si quieres mantener los pedidos actuales (recomendado)."
+            );
+            
+            if (shouldClearOrders) {
+              try {
+                console.log("Limpiando pedidos anteriores para reiniciar contadores...")
+                const { error: deleteError } = await supabase
+                  .from('menu_orders')
+                  .delete()
+                  .eq('week_start', weekStart)
+                  
+                if (deleteError) {
+                  console.error("Error al limpiar pedidos antiguos:", deleteError)
+                } else {
+                  console.log("Pedidos antiguos eliminados correctamente")
+                }
                 
-              if (deleteError) {
-                console.error("Error al limpiar pedidos antiguos:", deleteError)
-              } else {
-                console.log("Pedidos antiguos eliminados correctamente")
+                // También eliminar el resumen general para reiniciarlo
+                console.log("Eliminando resumen general para reiniciar a cero...")
+                const { error: deleteSummaryError } = await supabase
+                  .from('order_summaries')
+                  .delete()
+                  .eq('week_start', weekStart)
+                  .eq('user_name', 'general')
+                  
+                if (deleteSummaryError) {
+                  console.error("Error al eliminar resumen general:", deleteSummaryError)
+                } else {
+                  console.log("Resumen general eliminado correctamente")
+                }
+              } catch (cleanError) {
+                console.error("Error al limpiar pedidos:", cleanError)
               }
-              
-              // También eliminar el resumen general para reiniciarlo
-              console.log("Eliminando resumen general para reiniciar a cero...")
-              const { error: deleteSummaryError } = await supabase
-                .from('order_summaries')
-                .delete()
-                .eq('week_start', weekStart)
-                .eq('user_name', 'general')
-                
-              if (deleteSummaryError) {
-                console.error("Error al eliminar resumen general:", deleteSummaryError)
-              } else {
-                console.log("Resumen general eliminado correctamente")
-              }
-            } catch (cleanError) {
-              console.error("Error al limpiar pedidos:", cleanError)
+            } else {
+              console.log("Se ha decidido mantener los pedidos existentes.")
             }
             
             // Actualizar inmediatamente para asegurar que este dispositivo tenga el ID correcto
