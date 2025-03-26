@@ -95,91 +95,70 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     const menuChanged = JSON.stringify(menuDataRef.current) !== JSON.stringify(menuData);
     
     // Para evitar falsos positivos después de reinicios, comparamos también con localStorage
-    // Verificar si realmente es un cambio de menú y no simplemente un cambio de semana
     const isRealMenuChange = menuChanged && (savedMenuHash !== null && savedMenuHash !== currentMenuHash);
     
     // Si es la primera carga o no hay hash guardado, guardamos el hash actual
     if (!savedMenuHash) {
       localStorage.setItem('menuDataHash', currentMenuHash);
-      menuDataRef.current = menuData;
     }
     
     if (isRealMenuChange) {
-      console.log("El menú ha cambiado realmente, reiniciando todos los pedidos a 0");
+      console.log("El menú ha cambiado, actualizando las opciones disponibles pero manteniendo los pedidos existentes");
       localStorage.setItem('menuDataHash', currentMenuHash);
       menuDataRef.current = menuData;
       
-      // Reiniciar todos los pedidos a 0 cuando cambia el menú
-      setOrders(initializeOrders(menuData));
-      
-      // Crear un resumen vacío basado en el nuevo menú
-      const emptyOrderSummary = {
-        orders: Object.entries(initializeOrders(menuData)).map(([day, data]) => ({
-          day,
-          counts: data.counts,
-          comments: []
-        }))
-      };
-      
-      // Actualizar el resumen a 0 en la interfaz de usuario
-      setOrderSummary(emptyOrderSummary);
-      
-      // Eliminar el resumen general en la base de datos
-      const resetSummaryInDatabase = async () => {
-        try {
-          console.log("Eliminando resumen general en la base de datos debido a cambio de menú...");
-          
-          // Eliminar el resumen general actual
-          const { error: deleteError } = await supabase
-            .from('order_summaries')
-            .delete()
-            .eq('week_start', getWeekStart())
-            .eq('user_name', 'general');
-            
-          if (deleteError) {
-            console.error("Error al eliminar el resumen general:", deleteError);
-          } else {
-            console.log("Resumen general eliminado correctamente");
-            
-            // Crear un nuevo resumen vacío en la base de datos
-            if (currentUser) {
-              const { error: insertError } = await supabase
-                .from('order_summaries')
-                .insert({
-                  week_start: getWeekStart(),
-                  user_name: 'general',
-                  summary: emptyOrderSummary,
-                  updated_by: currentUser,
-                  updated_at: new Date().toISOString()
-                });
-                
-              if (insertError) {
-                console.error("Error al crear nuevo resumen vacío:", insertError);
-              } else {
-                console.log("Nuevo resumen vacío creado correctamente");
-              }
-            }
+      // Mantener los pedidos existentes, solo actualizar para añadir nuevas opciones
+      setOrders(prevOrders => {
+        const updatedOrders = { ...prevOrders };
+        
+        // Para cada día en el nuevo menú
+        Object.keys(menuData).forEach(day => {
+          // Si es un día nuevo que no existía, inicializarlo
+          if (!updatedOrders[day]) {
+            updatedOrders[day] = {
+              counts: {},
+              comments: [],
+              isExpanded: false
+            };
           }
-        } catch (error) {
-          console.error("Error al resetear el resumen:", error);
-        }
-      };
+          
+          // Asegurarnos de que todas las opciones del nuevo menú estén inicializadas
+          menuData[day].forEach(option => {
+            // Si la opción no existe en los pedidos actuales, inicializarla a 0
+            if (!updatedOrders[day].counts[option]) {
+              updatedOrders[day].counts[option] = 0;
+            }
+            // Las opciones existentes mantienen su valor
+          });
+        });
+        
+        return updatedOrders;
+      });
       
-      resetSummaryInDatabase();
+      // Actualizar el resumen pero sin reiniciar a cero
+      refreshSummary();
       
-      // Mostrar notificación de reinicio
+      // Mostrar notificación de actualización
       setMenuResetNotification(true);
       // Ocultar la notificación después de 5 segundos
       setTimeout(() => setMenuResetNotification(false), 5000);
-    } else {
-      // Si no ha cambiado el menú, asegurarse de que menuDataRef esté actualizado
-      menuDataRef.current = menuData;
     }
   }, [menuData, currentUser]);
 
   // Obtener la fecha de inicio de la semana actual
   const getWeekStart = () => {
-    // Cálculo normal para obtener el lunes de la semana actual
+    // Verificar si hay una semana personalizada guardada en localStorage
+    try {
+      const customWeekStart = localStorage.getItem('customWeekStart');
+      if (customWeekStart) {
+        console.log("Usando semana personalizada:", customWeekStart);
+        return customWeekStart;
+      }
+    } catch (e) {
+      console.error("Error al leer semana personalizada:", e);
+    }
+    
+    // Cálculo normal si no hay semana personalizada
     const now = new Date()
     const dayOfWeek = now.getDay()
     const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
@@ -999,7 +978,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           </svg>
           <div>
             <p className="font-medium">El menú ha sido actualizado.</p>
-            <p className="text-sm mt-1">Los pedidos anteriores han sido reiniciados.</p>
+            <p className="text-sm mt-1">Tus pedidos anteriores se han mantenido y se han añadido las nuevas opciones disponibles.</p>
           </div>
         </div>
       )}

@@ -143,54 +143,23 @@ export default function ExcelUploader({ setMenuData, onMenuUploaded }: ExcelUplo
             const newId = responseData[0].id
             console.log("Menú guardado con ID:", newId)
             
-            // Guardar información del menú cargado en localStorage para persistencia
             try {
-              localStorage.setItem('currentMenuId', String(newId));
-              localStorage.setItem('menuDataHash', JSON.stringify(processedData));
-              localStorage.setItem('menuLastUploaded', timestamp);
-            } catch (e) {
-              console.error("Error al guardar datos del menú en localStorage:", e);
-            }
-            
-            // Solo limpiar pedidos antiguos si explícitamente se desea reiniciar todo
-            const shouldClearOrders = confirm(
-              "¿Deseas eliminar todos los pedidos existentes y reiniciar los contadores a cero?\n\n" +
-              "- Selecciona 'OK' si quieres borrar todos los pedidos y comenzar de nuevo.\n" +
-              "- Selecciona 'Cancelar' si quieres mantener los pedidos actuales (recomendado)."
-            );
-            
-            if (shouldClearOrders) {
-              try {
-                console.log("Limpiando pedidos anteriores para reiniciar contadores...")
-                const { error: deleteError } = await supabase
-                  .from('menu_orders')
-                  .delete()
-                  .eq('week_start', weekStart)
-                  
-                if (deleteError) {
-                  console.error("Error al limpiar pedidos antiguos:", deleteError)
-                } else {
-                  console.log("Pedidos antiguos eliminados correctamente")
-                }
+              // Ya no eliminamos los pedidos anteriores, solo eliminamos el resumen general
+              // para que se regenere con el nuevo menú
+              console.log("Eliminando solo el resumen general para regenerarlo...")
+              const { error: deleteSummaryError } = await supabase
+                .from('order_summaries')
+                .delete()
+                .eq('week_start', weekStart)
+                .eq('user_name', 'general')
                 
-                // También eliminar el resumen general para reiniciarlo
-                console.log("Eliminando resumen general para reiniciar a cero...")
-                const { error: deleteSummaryError } = await supabase
-                  .from('order_summaries')
-                  .delete()
-                  .eq('week_start', weekStart)
-                  .eq('user_name', 'general')
-                  
-                if (deleteSummaryError) {
-                  console.error("Error al eliminar resumen general:", deleteSummaryError)
-                } else {
-                  console.log("Resumen general eliminado correctamente")
-                }
-              } catch (cleanError) {
-                console.error("Error al limpiar pedidos:", cleanError)
+              if (deleteSummaryError) {
+                console.error("Error al eliminar resumen general:", deleteSummaryError)
+              } else {
+                console.log("Resumen general eliminado correctamente")
               }
-            } else {
-              console.log("Se ha decidido mantener los pedidos existentes.")
+            } catch (cleanError) {
+              console.error("Error al limpiar el resumen:", cleanError)
             }
             
             // Actualizar inmediatamente para asegurar que este dispositivo tenga el ID correcto

@@ -23,7 +23,18 @@ export default function MyOrders() {
 
   // Obtener la fecha de inicio de la semana actual
   const getWeekStart = () => {
-    // Cálculo para obtener el lunes de la semana actual
+    // Verificar si hay una semana personalizada guardada en localStorage
+    try {
+      const customWeekStart = localStorage.getItem('customWeekStart');
+      if (customWeekStart) {
+        console.log("Usando semana personalizada:", customWeekStart);
+        return customWeekStart;
+      }
+    } catch (e) {
+      console.error("Error al leer semana personalizada:", e);
+    }
+    
+    // Cálculo normal si no hay semana personalizada
     const now = new Date()
     const dayOfWeek = now.getDay()
     const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
