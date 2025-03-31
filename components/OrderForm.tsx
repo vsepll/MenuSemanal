@@ -147,22 +147,19 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
 
   // Obtener la fecha de inicio de la semana actual
   const getWeekStart = () => {
-    // Verificar si hay una semana personalizada guardada en localStorage
-    try {
-      const customWeekStart = localStorage.getItem('customWeekStart');
-      if (customWeekStart) {
-        console.log("Usando semana personalizada:", customWeekStart);
-        return customWeekStart;
-      }
-    } catch (e) {
-      console.error("Error al leer semana personalizada:", e);
-    }
-    
-    // Cálculo normal si no hay semana personalizada
     const now = new Date()
-    const dayOfWeek = now.getDay()
-    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
-    return new Date(now.setDate(diff)).toISOString().split('T')[0]
+    // Si es viernes después de las 00:00, consideramos que es para la próxima semana
+    if (now.getDay() === 5) {
+      // Avanzamos al próximo lunes
+      const nextMonday = new Date(now)
+      nextMonday.setDate(now.getDate() + 3) // +3 días desde el viernes llega al lunes
+      return nextMonday.toISOString().split('T')[0]
+    } else {
+      // Para cualquier otro día, usamos el lunes de la semana actual
+      const dayOfWeek = now.getDay()
+      const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+      return new Date(now.setDate(diff)).toISOString().split('T')[0]
+    }
   }
 
   // Cargar pedidos existentes
@@ -777,7 +774,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     }
     
     try {
-      // Obtener TODOS los pedidos de la semana actual, sin filtrar por usuario para crear el resumen general
+      // Obtener TODOS los pedidos de la semana actual
       const { data: latestData, error: fetchError } = await supabase
         .from('menu_orders')
         .select('*')
@@ -787,16 +784,14 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
 
       // Construimos el resumen con los datos más recientes
       const updatedOrders = { ...initializeOrders(menuData) }
-      
-      // Para mantener track de qué usuario hizo cada comentario
       const commentsByDay = {} as Record<string, Map<string, string>>;
       
+      // Inicializar mapas para comentarios por día
+      orderedDays.forEach(day => {
+        commentsByDay[day] = new Map();
+      });
+      
       if (latestData) {
-        // Inicializar mapas para comentarios por día
-        orderedDays.forEach(day => {
-          commentsByDay[day] = new Map();
-        });
-        
         // Sumar todos los pedidos de todas las personas
         latestData.forEach(order => {
           if (updatedOrders[order.day]) {
@@ -811,18 +806,13 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
             if (order.comments && Array.isArray(order.comments)) {
               order.comments.forEach((comment: string) => {
                 const userName = order.user_name || 'Usuario';
-                
-                // Verificar si el comentario ya tiene formato "texto (usuario)"
                 const hasUserFormat = /^.+\s\([^)]+\)$/.test(comment);
                 
                 if (hasUserFormat) {
-                  // Si ya tiene el formato, usarlo directamente sin modificar
-                  const commentKey = comment; // Usar el comentario completo como clave
-                  commentsByDay[order.day].set(commentKey, comment);
+                  commentsByDay[order.day].set(comment, comment);
                 } else {
-                  // Si no tiene el formato, añadir el nombre del usuario
-                  const commentKey = `${comment}-${userName}`;
-                  commentsByDay[order.day].set(commentKey, `${comment} (${userName})`);
+                  const commentWithUser = `${comment} (${userName})`;
+                  commentsByDay[order.day].set(commentWithUser, commentWithUser);
                 }
               });
             }
@@ -830,40 +820,34 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         });
       }
 
-      // Crear el resumen general con comentarios que incluyen el nombre del usuario
-      const summary = {
-        orders: Object.entries(updatedOrders).map(([day, data]) => ({
-          day,
-          counts: data.counts,
-          comments: Array.from(commentsByDay[day]?.values() || [])
-        }))
-      };
-
-      // Guardar el resumen general en Supabase
-      const { error } = await supabase
-        .from('order_summaries')
-        .upsert({
-          week_start: getWeekStart(),
-          user_name: 'general', // Usamos 'general' como identificador para el resumen global
-          summary: summary,
-          updated_by: currentUser,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'week_start,user_name',
-          ignoreDuplicates: false
-        })
-
-      if (error) throw error
+      // Generar CSV
+      let csvContent = "Día,Opción,Cantidad,Comentarios\n";
       
-      setOrderSummary(summary)
-      setSummaryNeedsUpdate(false)
-      lastSummaryUpdateRef.current = new Date();
+      orderedDays.forEach(day => {
+        const dayComments = Array.from(commentsByDay[day]?.values() || []).join(" | ");
+        Object.entries(updatedOrders[day].counts).forEach(([option, count]) => {
+          if (count > 0) { // Solo incluir opciones con pedidos
+            csvContent += `${day},"${option}",${count},"${dayComments}"\n`;
+          }
+        });
+      });
+
+      // Crear y descargar el archivo CSV
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      const fecha = new Date().toLocaleDateString('es-AR').replace(/\//g, '-');
+      link.setAttribute("href", url);
+      link.setAttribute("download", `resumen_pedidos_${fecha}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       
-      alert('Resumen general generado exitosamente')
+      alert('Resumen descargado exitosamente')
 
     } catch (error) {
-      console.error('Error al guardar el resumen:', error)
-      alert('Error al guardar el resumen. Por favor, intenta de nuevo.')
+      console.error('Error al generar el resumen:', error)
+      alert('Error al generar el resumen. Por favor, intenta de nuevo.')
     }
   }
 

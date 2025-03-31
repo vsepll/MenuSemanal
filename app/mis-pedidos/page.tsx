@@ -23,22 +23,19 @@ export default function MyOrders() {
 
   // Obtener la fecha de inicio de la semana actual
   const getWeekStart = () => {
-    // Verificar si hay una semana personalizada guardada en localStorage
-    try {
-      const customWeekStart = localStorage.getItem('customWeekStart');
-      if (customWeekStart) {
-        console.log("Usando semana personalizada:", customWeekStart);
-        return customWeekStart;
-      }
-    } catch (e) {
-      console.error("Error al leer semana personalizada:", e);
-    }
-    
-    // Cálculo normal si no hay semana personalizada
     const now = new Date()
-    const dayOfWeek = now.getDay()
-    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
-    return new Date(now.setDate(diff)).toISOString().split('T')[0]
+    // Si es viernes después de las 00:00, consideramos que es para la próxima semana
+    if (now.getDay() === 5) {
+      // Avanzamos al próximo lunes
+      const nextMonday = new Date(now)
+      nextMonday.setDate(now.getDate() + 3) // +3 días desde el viernes llega al lunes
+      return nextMonday.toISOString().split('T')[0]
+    } else {
+      // Para cualquier otro día, usamos el lunes de la semana actual
+      const dayOfWeek = now.getDay()
+      const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+      return new Date(now.setDate(diff)).toISOString().split('T')[0]
+    }
   }
 
   // Cargar el usuario desde localStorage
@@ -58,7 +55,7 @@ export default function MyOrders() {
         console.log("Se detectó un cambio en la semana seleccionada. Recargando pedidos...");
         if (currentUser) {
           // Recargar pedidos cuando cambia la semana
-          loadUserOrders(currentUser, e.newValue || getWeekStart());
+          loadUserOrders(currentUser);
         }
       }
     };
@@ -73,11 +70,12 @@ export default function MyOrders() {
   }, [currentUser]);
 
   // Función para cargar los pedidos del usuario
-  const loadUserOrders = async (user: string, weekStart: string = getWeekStart()) => {
+  const loadUserOrders = async (user: string) => {
     if (!user) return;
     
     try {
       setLoading(true);
+      const weekStart = getWeekStart();
       console.log(`Cargando pedidos del usuario: ${user} para la semana: ${weekStart}`);
       
       const { data, error } = await supabase
@@ -192,94 +190,18 @@ export default function MyOrders() {
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                 {getWeekStart()}
               </span>
-              {localStorage.getItem('customWeekStart') && (
-                <span className="text-xs text-gray-400">
-                  (Semana personalizada)
-                </span>
-              )}
             </div>
           </div>
           <div className="flex gap-3">
             <button
-              onClick={async () => {
-                try {
-                  setLoading(true);
-                  
-                  // Cargar pedidos directamente de Supabase
-                  const { data, error } = await supabase
-                    .from('menu_orders')
-                    .select('*')
-                    .eq('week_start', getWeekStart())
-                    .eq('user_name', currentUser);
-                  
-                  if (error) throw error;
-                  
-                  if (data && data.length > 0) {
-                    console.log("Pedidos recargados:", data.length);
-                    
-                    // Organizar los pedidos por día
-                    const ordersByDay: { [day: string]: { counts: any, comments: string[] } } = {};
-                    
-                    data.forEach(order => {
-                      if (!ordersByDay[order.day]) {
-                        ordersByDay[order.day] = {
-                          counts: {},
-                          comments: []
-                        };
-                      }
-                      
-                      // Guardamos los pedidos reales del usuario
-                      ordersByDay[order.day].counts[order.option] = order.count;
-                      
-                      // Añadimos los comentarios si existen
-                      if (order.comments && Array.isArray(order.comments)) {
-                        ordersByDay[order.day].comments = [...ordersByDay[order.day].comments, ...order.comments];
-                      }
-                    });
-                    
-                    // Formatear los datos para el resumen personal
-                    const formattedSummary = {
-                      user: currentUser,
-                      orders: Object.entries(ordersByDay).map(([day, data]) => ({
-                        day,
-                        counts: data.counts,
-                        comments: data.comments
-                      }))
-                    };
-                    
-                    setOrderSummary(formattedSummary);
-                    alert("Pedidos actualizados correctamente");
-                  } else {
-                    console.log("No se encontraron pedidos para el usuario");
-                    setOrderSummary({
-                      user: currentUser,
-                      orders: []
-                    });
-                    alert("No se encontraron pedidos para esta semana");
-                  }
-                } catch (error) {
-                  console.error("Error al recargar pedidos:", error);
-                  alert("Error al recargar los pedidos. Por favor, intenta de nuevo.");
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              className="px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors flex items-center gap-2"
+              onClick={() => loadUserOrders(currentUser)}
+              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Recargar pedidos
+              Recargar
             </button>
-            <Link 
-              href="/"
-              className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Volver
-            </Link>
           </div>
         </div>
 

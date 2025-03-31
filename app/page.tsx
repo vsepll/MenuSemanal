@@ -46,33 +46,6 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<string | null>(null)
   const [showUploader, setShowUploader] = useState(false)
   const loadingMenuRef = useRef<boolean>(false)
-  const [customWeekStart, setCustomWeekStart] = useState<string | null>(
-    typeof localStorage !== 'undefined' ? localStorage.getItem('customWeekStart') : null
-  )
-  const [showWeekSelector, setShowWeekSelector] = useState(false)
-
-  const getWeekStart = () => {
-    if (customWeekStart) {
-      return customWeekStart;
-    }
-    
-    const now = new Date()
-    const dayOfWeek = now.getDay()
-    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
-    return new Date(now.setDate(diff)).toISOString().split('T')[0]
-  }
-
-  useEffect(() => {
-    try {
-      const savedWeek = localStorage.getItem('customWeekStart');
-      if (savedWeek && savedWeek !== customWeekStart) {
-        console.log(`Cargando semana personalizada desde localStorage: ${savedWeek}`);
-        setCustomWeekStart(savedWeek);
-      }
-    } catch (e) {
-      console.error("Error al cargar semana personalizada:", e);
-    }
-  }, []);
 
   const setMenuDataWithTracking = (data: MenuDataType, id?: number) => {
     console.log("Actualizando menú localmente, ID:", id || "local")
@@ -244,15 +217,6 @@ export default function Home() {
 
         {currentUser && (
           <div className="mb-8 flex justify-end gap-4">
-            <button
-              onClick={() => setShowWeekSelector(!showWeekSelector)}
-              className="px-5 py-2.5 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-xl hover:from-yellow-600 hover:to-yellow-700 transition-all duration-200 flex items-center gap-2 shadow-md"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <span>{customWeekStart ? `Semana: ${customWeekStart}` : 'Cambiar Semana'}</span>
-            </button>
             <Link 
               href="/mis-pedidos" 
               className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 flex items-center gap-2 shadow-md"
@@ -273,107 +237,6 @@ export default function Home() {
               </svg>
               Administración
             </Link>
-          </div>
-        )}
-
-        {showWeekSelector && (
-          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
-            <h3 className="text-lg font-medium text-yellow-800 mb-3">Seleccionar semana</h3>
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1">
-                <input 
-                  type="date" 
-                  value={customWeekStart || getWeekStart()}
-                  onChange={(e) => setCustomWeekStart(e.target.value)}
-                  className="w-full p-2 border border-yellow-300 rounded-lg"
-                />
-                <p className="text-xs text-yellow-700 mt-1">Selecciona el lunes de la semana que deseas ver</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setCustomWeekStart(null);
-                    localStorage.removeItem('customWeekStart');
-                    window.location.reload();
-                  }}
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
-                >
-                  Restablecer
-                </button>
-                <button
-                  onClick={() => {
-                    if (customWeekStart) {
-                      localStorage.setItem('customWeekStart', customWeekStart);
-                      window.location.reload();
-                    }
-                  }}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
-                >
-                  Aplicar y recargar
-                </button>
-              </div>
-            </div>
-            
-            <div className="mt-4 pt-4 border-t border-yellow-200">
-              <h4 className="text-sm font-medium text-yellow-800 mb-2">Opciones avanzadas</h4>
-              <button
-                onClick={async () => {
-                  if (!currentUser) {
-                    alert('Por favor selecciona un usuario antes de realizar esta acción');
-                    return;
-                  }
-                  
-                  const confirmed = confirm(`ATENCIÓN: Esto eliminará TODOS los pedidos de la semana ${getWeekStart()}. Esta acción no se puede deshacer. ¿Estás seguro?`);
-                  
-                  if (!confirmed) return;
-                  
-                  try {
-                    setLoading(true);
-                    
-                    // Eliminamos todos los pedidos de esta semana
-                    const { error } = await supabase
-                      .from('menu_orders')
-                      .delete()
-                      .eq('week_start', getWeekStart());
-                      
-                    if (error) throw error;
-                    
-                    // También eliminamos el resumen general
-                    const { error: summaryError } = await supabase
-                      .from('order_summaries')
-                      .delete()
-                      .eq('week_start', getWeekStart())
-                      .eq('user_name', 'general');
-                      
-                    if (summaryError) {
-                      console.error("Error al eliminar resumen:", summaryError);
-                    }
-                    
-                    // Limpiar localStorage relacionado
-                    Object.keys(localStorage).forEach(key => {
-                      if (key.includes(getWeekStart()) || key === 'hasOrderData') {
-                        localStorage.removeItem(key);
-                      }
-                    });
-                    
-                    alert(`Todos los pedidos de la semana ${getWeekStart()} han sido eliminados. La página se recargará.`);
-                    window.location.reload();
-                    
-                  } catch (e: any) {
-                    console.error("Error al eliminar pedidos:", e);
-                    alert(`Error: ${e.message || 'Ocurrió un error desconocido'}`);
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                <span>Eliminar todos los pedidos de esta semana</span>
-              </button>
-            </div>
           </div>
         )}
 

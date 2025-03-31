@@ -29,9 +29,18 @@ export default function ExcelUploader({ setMenuData, onMenuUploaded }: ExcelUplo
 
   const getWeekStart = () => {
     const now = new Date()
-    const dayOfWeek = now.getDay()
-    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
-    return new Date(now.setDate(diff)).toISOString().split('T')[0]
+    // Si es viernes después de las 00:00, consideramos que es para la próxima semana
+    if (now.getDay() === 5) {
+      // Avanzamos al próximo lunes
+      const nextMonday = new Date(now)
+      nextMonday.setDate(now.getDate() + 3) // +3 días desde el viernes llega al lunes
+      return nextMonday.toISOString().split('T')[0]
+    } else {
+      // Para cualquier otro día, usamos el lunes de la semana actual
+      const dayOfWeek = now.getDay()
+      const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+      return new Date(now.setDate(diff)).toISOString().split('T')[0]
+    }
   }
 
   const processExcelData = (data: any[]): MenuDataType => {
