@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
@@ -60,10 +60,11 @@ interface OrderPayloadNew {
 }
 
 export default function OrderForm({ menuData, setOrderSummary, currentUser }: OrderFormProps) {
-  const orderedDays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
+  // Wrap orderedDays in useMemo
+  const orderedDays = useMemo(() => ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], []);
+  
   const menuDataRef = useRef<MenuData>(menuData);
   
-  // Inicializar el estado con contadores en 0 y comentarios vacíos para cada opción (wrap in useCallback)
   const initializeOrders = useCallback((currentMenuData: MenuData) => {
     console.log("Inicializando pedidos con nuevo menú:", Object.keys(currentMenuData).map(day => 
       `${day}: ${currentMenuData[day]?.length || 0} opciones`
@@ -80,9 +81,9 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       }
       return acc
     }, {} as DayOrders);
-  }, [orderedDays]); // Dependency: orderedDays
+  }, [orderedDays]); // Now depends on memoized orderedDays
 
-  const [orders, setOrders] = useState<DayOrders>(() => initializeOrders(menuData)) // Use initializer function
+  const [orders, setOrders] = useState<DayOrders>(() => initializeOrders(menuData))
   const [newComment, setNewComment] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [loadingButtons, setLoadingButtons] = useState<{[key: string]: boolean}>({})
@@ -90,7 +91,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
   const [summaryNeedsUpdate, setSummaryNeedsUpdate] = useState(false)
   const lastSummaryUpdateRef = useRef<Date>(new Date());
 
-  // Función para refrescar el resumen (wrap in useCallback)
   const refreshSummary = useCallback(async () => {
     try {
       // Obtener TODOS los pedidos de la semana actual
@@ -157,7 +157,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     } catch (error) {
       console.error('Error al actualizar el resumen:', error);
     }
-  }, [initializeOrders, orderedDays, setOrderSummary]); // Dependencies: initializeOrders, orderedDays, setOrderSummary
+  }, [initializeOrders, orderedDays, setOrderSummary]); // Now depends on memoized orderedDays
 
   // Efecto para actualizar los pedidos cuando cambia el menú
   useEffect(() => {
@@ -353,7 +353,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           setSummaryNeedsUpdate(true);
           await refreshSummary();
           
-          // Assert the type of payload.new within the condition
           const newPayload = payload.new as OrderPayloadNew | undefined;
           if (newPayload && newPayload.user_name !== currentUser) {
             // Mostrar una notificación temporal
@@ -1006,9 +1005,9 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
               <span className="font-medium text-gray-900">{day}</span>
             </div>
             <div className="flex items-center gap-2">
-              {Object.entries(orders[day].counts).reduce((sum, [_, count]) => sum + count, 0) > 0 && (
+              {Object.entries(orders[day].counts).reduce((sum, [, count]) => sum + count, 0) > 0 && (
                 <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
-                  {Object.entries(orders[day].counts).reduce((sum, [_, count]) => sum + count, 0)} pedidos
+                  {Object.entries(orders[day].counts).reduce((sum, [, count]) => sum + count, 0)} pedidos
                 </span>
               )}
               <svg 

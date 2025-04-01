@@ -119,14 +119,14 @@ export async function GET(req: NextRequest) {
 
     // Obtener las opciones únicas para cada día
     const dayOptions = Object.entries(ordersByDay)
-      .filter(([_, data]) => Object.keys(data.counts).length > 0) // Filtrar días sin pedidos
+      .filter(([, data]) => Object.keys(data.counts).length > 0)
       .map(([day, data]) => ({ day, options: Object.keys(data.counts) }))
 
     // Ordenar los días según el orden definido
     dayOptions.sort((a, b) => orderedDays.indexOf(a.day) - orderedDays.indexOf(b.day))
 
     // Generar el HTML del resumen
-    let htmlContent = `
+    const htmlContent = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #2563eb; text-align: center; margin-bottom: 20px;">Resumen de Pedidos - Semana del ${getWeekStart()}</h1>
       <p style="text-align: center; color: #666; margin-bottom: 30px;">A continuación se presenta el resumen de los pedidos para esta semana.</p>
@@ -150,7 +150,7 @@ export async function GET(req: NextRequest) {
     <h3>Comentarios:</h3>
     <ul>
       ${Object.entries(ordersByDay)
-        .flatMap(([_, dayData]) => dayData.comments)
+        .flatMap(([, dayData]) => dayData.comments)
         .filter(comment => comment && comment.trim() !== '')
         .map(comment => `<li>${comment}</li>`)
         .join('')}
