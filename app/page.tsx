@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import OrderForm from "@/components/OrderForm"
 import OrderSummary from "@/components/OrderSummary"
 import ExcelUploader from "@/components/ExcelUploader"
@@ -41,18 +41,22 @@ const dayMappings = {
 
 export default function Home() {
   const [menuData, setMenuData] = useState<MenuDataType>(defaultMenuData)
-  const [orderSummary, setOrderSummary] = useState<OrderSummaryType | null>(null)
+  const [internalOrderSummary, setInternalOrderSummary] = useState<OrderSummaryType | null>(null)
   const [loading, setLoading] = useState(true)
   const [currentUser, setCurrentUser] = useState<string | null>(null)
   const [showUploader, setShowUploader] = useState(false)
   const loadingMenuRef = useRef<boolean>(false)
 
-  const setMenuDataWithTracking = (data: MenuDataType, id?: number) => {
+  const setOrderSummary = useCallback((summary: OrderSummaryType | null) => {
+    setInternalOrderSummary(summary);
+  }, []);
+
+  const setMenuDataWithTracking = useCallback((data: MenuDataType, id?: number) => {
     console.log("Actualizando menú localmente, ID:", id || "local")
     setMenuData(data)
-  }
+  }, []);
 
-  const loadLatestMenu = async () => {
+  const loadLatestMenu = useCallback(async () => {
     if (loadingMenuRef.current) {
       console.log("Ya hay una carga de menú en progreso, omitiendo");
       return;
@@ -82,15 +86,11 @@ export default function Home() {
 
       if (error) {
         console.error("Error al cargar menú de Supabase:", error);
-        
         if (fallbackMenu) {
           console.log("Usando menú en caché debido a error de conexión");
           setMenuDataWithTracking(fallbackMenu);
-          setLoading(false);
-          loadingMenuRef.current = false;
           return;
         }
-        
         throw error;
       }
 
@@ -116,7 +116,6 @@ export default function Home() {
         if (Object.keys(processedData).length > 0) {
           console.log("Menú procesado correctamente con", Object.keys(processedData).length, "días:", Object.keys(processedData));
           setMenuDataWithTracking(processedData, data[0].id);
-          
           try {
             localStorage.setItem('cachedMenu', JSON.stringify(processedData));
             localStorage.setItem('menuLastUpdated', new Date().toISOString());
@@ -135,7 +134,7 @@ export default function Home() {
       loadingMenuRef.current = false;
       setLoading(false)
     }
-  }
+  }, [setMenuDataWithTracking]);
 
   useEffect(() => {
     loadLatestMenu()
@@ -262,7 +261,7 @@ export default function Home() {
                         const { data: weeksData, error: weeksError } = await supabase
                           .from('menu_orders')
                           .select('week_start')
-                          .order('week_start', { ascending: false });
+                          .order('week_start', { ascending: false }) as { data: { week_start: string }[] | null; error: any };
                         
                         if (weeksError) throw weeksError;
                         
@@ -345,8 +344,8 @@ export default function Home() {
           </div>
 
           <div className="lg:sticky lg:top-8 self-start">
-            {orderSummary && (
-              <OrderSummary orderSummary={orderSummary} />
+            {internalOrderSummary && (
+              <OrderSummary orderSummary={internalOrderSummary} />
             )}
           </div>
         </div>

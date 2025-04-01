@@ -54,9 +54,9 @@ export default function OrderSummary({ orderSummary }: OrderSummaryProps) {
         
         // Agregar conteo de cada opción
         Object.entries(order.counts)
-          .filter(([, count]) => count > 0) // Solo mostrar opciones con pedidos
+          .filter(([, count]) => count > 0) // Remove underscore from [, count]
           .forEach(([option, count]) => {
-            dayLines.push(`  • ${option}: ${count}`)
+            dayLines.push(`  • ${option}: ${count}`) // Use option and count
           })
 
         // Agregar el total del día
@@ -272,13 +272,13 @@ export default function OrderSummary({ orderSummary }: OrderSummaryProps) {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
                       {Object.entries(order.counts)
-                        .filter(([, count]) => count > 0) // Filter out options with 0 count
+                        .filter(([, count]) => count > 0) // Remove underscore from [, count]
                         .map(([option, count]) => (
                           <tr key={option}>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{option}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-right font-medium">{count}</td>
                           </tr>
-                        ))
+                        )) // Use option and count
                       }
                     </tbody>
                   </table>

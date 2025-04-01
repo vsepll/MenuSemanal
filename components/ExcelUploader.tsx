@@ -43,7 +43,7 @@ export default function ExcelUploader({ setMenuData, onMenuUploaded }: ExcelUplo
     }
   }
 
-  const processExcelData = (data: any[]): MenuDataType => {
+  const processExcelData = (data: unknown[][]): MenuDataType => {
     const orderedDays = ["LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES"]
     const rawData: { [key: string]: string[] } = {}
 
