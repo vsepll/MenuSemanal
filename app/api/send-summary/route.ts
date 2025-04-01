@@ -22,6 +22,9 @@ interface OrderSummary {
   }>;
 }
 
+// Definición del orden de los días
+const orderedDays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
+
 // Función para obtener el inicio de la semana actual (lunes)
 const getWeekStart = () => {
   const now = new Date();
@@ -114,8 +117,49 @@ export async function GET(req: NextRequest) {
       }))
     };
 
-    // Generar contenido del correo
-    const emailContent = generateEmailContent(summary);
+    // Obtener las opciones únicas para cada día
+    const dayOptions = Object.entries(ordersByDay)
+      .filter(([_, data]) => Object.keys(data.counts).length > 0) // Filtrar días sin pedidos
+      .map(([day, data]) => ({ day, options: Object.keys(data.counts) }))
+
+    // Ordenar los días según el orden definido
+    dayOptions.sort((a, b) => orderedDays.indexOf(a.day) - orderedDays.indexOf(b.day))
+
+    // Generar el HTML del resumen
+    let htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #2563eb; text-align: center; margin-bottom: 20px;">Resumen de Pedidos - Semana del ${getWeekStart()}</h1>
+      <p style="text-align: center; color: #666; margin-bottom: 30px;">A continuación se presenta el resumen de los pedidos para esta semana.</p>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Día</th>
+          <th>Opciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${dayOptions.map(({ day, options }) => `
+          <tr>
+            <td>${day}</td>
+            <td>${options.join(', ')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <h3>Comentarios:</h3>
+    <ul>
+      ${Object.entries(ordersByDay)
+        .flatMap(([_, dayData]) => dayData.comments)
+        .filter(comment => comment && comment.trim() !== '')
+        .map(comment => `<li>${comment}</li>`)
+        .join('')}
+    </ul>
+    <p style="text-align: center; color: #9ca3af; font-size: 14px; margin-top: 30px;">
+      Este correo fue enviado automáticamente por el Sistema de Pedidos de Comida.
+    </p>
+    </div>
+    `
 
     // Configurar transporte de correo (ejemplo con Gmail, ajustar según proveedor)
     const transporter = createTransport({
@@ -131,7 +175,7 @@ export async function GET(req: NextRequest) {
       from: process.env.EMAIL_USER,
       to: process.env.EMAIL_RECIPIENTS,
       subject: `Resumen de Pedidos - Semana del ${getWeekStart()}`,
-      html: emailContent,
+      html: htmlContent,
     };
 
     // Enviar correo

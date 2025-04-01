@@ -62,7 +62,7 @@ export default function ExcelUploader({ setMenuData, onMenuUploaded }: ExcelUplo
         const dayOptions = dayRow.slice(1).filter(Boolean) // Las opciones empiezan desde la segunda columna
         if (dayOptions.length > 0) {
           // Asegurarse de que todas las opciones sean strings
-          rawData[day] = dayOptions.map((option: any) => String(option).trim())
+          rawData[day] = dayOptions.map((option: unknown) => String(option).trim())
           console.log(`Opciones para ${day}:`, rawData[day]);
         } else {
           console.warn(`No se encontraron opciones válidas para el día ${day}`);
@@ -118,7 +118,7 @@ export default function ExcelUploader({ setMenuData, onMenuUploaded }: ExcelUplo
         const workbook = XLSX.read(data, { type: "array" })
         const sheetName = workbook.SheetNames[0]
         const worksheet = workbook.Sheets[sheetName]
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+        const jsonData: unknown[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
 
         const processedData = processExcelData(jsonData)
         console.log('Datos procesados del Excel:', processedData)

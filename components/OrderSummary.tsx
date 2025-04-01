@@ -54,7 +54,7 @@ export default function OrderSummary({ orderSummary }: OrderSummaryProps) {
         
         // Agregar conteo de cada opción
         Object.entries(order.counts)
-          .filter(([_, count]) => count > 0) // Solo mostrar opciones con pedidos
+          .filter(([, count]) => count > 0) // Solo mostrar opciones con pedidos
           .forEach(([option, count]) => {
             dayLines.push(`  • ${option}: ${count}`)
           })
@@ -263,15 +263,25 @@ export default function OrderSummary({ orderSummary }: OrderSummaryProps) {
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {Object.entries(order.counts)
-                    .filter(([_, count]) => count > 0)
-                    .map(([option, count], i) => (
-                      <div key={i} className="flex justify-between items-center text-sm">
-                        <span className="text-gray-600">{option}</span>
-                        <span className="font-medium text-gray-900">{count}</span>
-                      </div>
-                    ))
-                  }
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Opción</th>
+                        <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {Object.entries(order.counts)
+                        .filter(([, count]) => count > 0) // Filter out options with 0 count
+                        .map(([option, count]) => (
+                          <tr key={option}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{option}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-right font-medium">{count}</td>
+                          </tr>
+                        ))
+                      }
+                    </tbody>
+                  </table>
                   {order.comments.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <h4 className="text-sm font-medium text-gray-700 mb-2">Notas especiales:</h4>
@@ -297,6 +307,21 @@ export default function OrderSummary({ orderSummary }: OrderSummaryProps) {
               </span>
             </div>
           </div>
+        </div>
+
+        <div className="mt-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-3">Comentarios Generales</h3>
+          {orderSummary.orders.flatMap(order => order.comments).length > 0 ? (
+            <ul className="space-y-2">
+              {orderSummary.orders.flatMap(order => order.comments).map((comment, index) => (
+                <li key={index} className="p-3 bg-gray-50 rounded-lg text-sm text-gray-700">
+                  {comment}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-500">No hay comentarios generales para esta semana.</p>
+          )}
         </div>
       </div>
     </div>

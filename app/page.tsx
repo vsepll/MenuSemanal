@@ -101,7 +101,7 @@ export default function Home() {
         const processedData: MenuDataType = {}
 
         Object.entries(receivedData).forEach(([key, value]) => {
-          let normalizedKey = key.toUpperCase();
+          const normalizedKey = key.toUpperCase();
           console.log(`Procesando día: ${key} -> ${normalizedKey}`);
           const normalizedDay = dayMappings[normalizedKey as keyof typeof dayMappings]
           
@@ -144,7 +144,7 @@ export default function Home() {
       try {
         console.log("Verificando conexión con Supabase...");
         
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('menu_orders')
           .select('count', { count: 'exact', head: true });
         
@@ -178,7 +178,7 @@ export default function Home() {
     return () => {
       clearTimeout(timer);
     }
-  }, [])
+  }, [loadLatestMenu])
 
   const handleUserSelect = (userName: string) => {
     setCurrentUser(userName)
@@ -282,9 +282,10 @@ export default function Home() {
                         
                         alert(`Diagnóstico de semanas:\n\nSemana actual calculada: ${currentWeek}\nRegistros en semana actual: ${count || 0}\n\nSemanas disponibles en Supabase:\n${uniqueWeeks.join('\n')}`);
                         
-                      } catch (e: any) {
-                        console.error("Error en diagnóstico:", e);
-                        alert("Error al realizar diagnóstico: " + (e.message || "Error desconocido"));
+                      } catch (e) {
+                        const error = e as Error;
+                        console.error("Error en diagnóstico:", error);
+                        alert("Error al realizar diagnóstico: " + (error.message || "Error desconocido"));
                       }
                     }}
                     className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 rounded-xl hover:bg-purple-100 transition-colors"

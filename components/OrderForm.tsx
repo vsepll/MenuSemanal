@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 interface MenuData {
   [key: string]: string[]
@@ -49,12 +50,21 @@ interface BroadcastMessage {
   timestamp: number
 }
 
+// Define the expected shape of the 'new' object in the payload
+interface OrderPayloadNew {
+  day: string;
+  option: string;
+  count: number;
+  comments?: string[];
+  user_name?: string; // Make user_name optional just in case
+}
+
 export default function OrderForm({ menuData, setOrderSummary, currentUser }: OrderFormProps) {
   const orderedDays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
   const menuDataRef = useRef<MenuData>(menuData);
   
-  // Inicializar el estado con contadores en 0 y comentarios vacíos para cada opción
-  const initializeOrders = (currentMenuData: MenuData) => {
+  // Inicializar el estado con contadores en 0 y comentarios vacíos para cada opción (wrap in useCallback)
+  const initializeOrders = useCallback((currentMenuData: MenuData) => {
     console.log("Inicializando pedidos con nuevo menú:", Object.keys(currentMenuData).map(day => 
       `${day}: ${currentMenuData[day]?.length || 0} opciones`
     ).join(", "));
@@ -70,92 +80,132 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       }
       return acc
     }, {} as DayOrders);
-  };
+  }, [orderedDays]); // Dependency: orderedDays
 
-  const [orders, setOrders] = useState<DayOrders>(initializeOrders(menuData))
+  const [orders, setOrders] = useState<DayOrders>(() => initializeOrders(menuData)) // Use initializer function
   const [newComment, setNewComment] = useState<string>("")
-  const [activeDay, setActiveDay] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingButtons, setLoadingButtons] = useState<{[key: string]: boolean}>({})
   const [menuResetNotification, setMenuResetNotification] = useState(false)
   const [summaryNeedsUpdate, setSummaryNeedsUpdate] = useState(false)
-  const [lastGlobalUpdate, setLastGlobalUpdate] = useState<Date>(new Date())
   const lastSummaryUpdateRef = useRef<Date>(new Date());
+
+  // Función para refrescar el resumen (wrap in useCallback)
+  const refreshSummary = useCallback(async () => {
+    try {
+      // Obtener TODOS los pedidos de la semana actual
+      const { data: latestData, error: fetchError } = await supabase
+        .from('menu_orders')
+        .select('*')
+        .eq('week_start', getWeekStart())
+
+      if (fetchError) throw fetchError
+
+      // Construimos el resumen con los datos más recientes
+      const newOrders = initializeOrders(menuDataRef.current) // Use ref for current menuData
+      
+      const commentsByDay = {} as Record<string, Map<string, string>>;
+      
+      if (latestData) {
+        // Inicializar mapas para comentarios por día
+        orderedDays.forEach(day => {
+          commentsByDay[day] = new Map();
+        });
+        
+        // Sumar todos los pedidos de todas las personas
+        latestData.forEach(order => {
+          if (newOrders[order.day]) {
+            if (!newOrders[order.day].counts[order.option]) {
+              newOrders[order.day].counts[order.option] = 0;
+            }
+            newOrders[order.day].counts[order.option] += order.count;
+            
+            if (order.comments && Array.isArray(order.comments)) {
+              order.comments.forEach((comment: string) => {
+                const userName = order.user_name || 'Usuario';
+                const hasUserFormat = /^.+\s\([^)]+\)$/.test(comment);
+                
+                if (hasUserFormat) {
+                  const commentKey = comment;
+                  commentsByDay[order.day].set(commentKey, comment);
+                } else {
+                  const commentKey = `${comment}-${userName}`;
+                  commentsByDay[order.day].set(commentKey, `${comment} (${userName})`);
+                }
+              });
+            }
+          }
+        });
+      }
+
+      // Crear el resumen
+      const summary = {
+        orders: Object.entries(newOrders).map(([day, data]) => ({
+          day,
+          counts: data.counts,
+          comments: Array.from(commentsByDay[day]?.values() || [])
+        }))
+      };
+
+      // Actualizar el estado del resumen
+      setOrderSummary(summary);
+      setSummaryNeedsUpdate(false);
+      lastSummaryUpdateRef.current = new Date();
+      
+      console.log("Resumen actualizado con éxito");
+      
+    } catch (error) {
+      console.error('Error al actualizar el resumen:', error);
+    }
+  }, [initializeOrders, orderedDays, setOrderSummary]); // Dependencies: initializeOrders, orderedDays, setOrderSummary
 
   // Efecto para actualizar los pedidos cuando cambia el menú
   useEffect(() => {
-    // Solo corre este efecto si el usuario está logueado
     if (!currentUser) return;
     
-    // Verificar si hay menú guardado en localStorage para comparar
     const savedMenuHash = localStorage.getItem('menuDataHash');
     const currentMenuHash = JSON.stringify(menuData);
-    
-    // Solo si realmente ha cambiado el menú (comparación profunda)
-    const menuChanged = JSON.stringify(menuDataRef.current) !== JSON.stringify(menuData);
-    
-    // Para evitar falsos positivos después de reinicios, comparamos también con localStorage
+    const menuChanged = JSON.stringify(menuDataRef.current) !== currentMenuHash;
     const isRealMenuChange = menuChanged && (savedMenuHash !== null && savedMenuHash !== currentMenuHash);
     
-    // Si es la primera carga o no hay hash guardado, guardamos el hash actual
     if (!savedMenuHash) {
       localStorage.setItem('menuDataHash', currentMenuHash);
     }
     
     if (isRealMenuChange) {
-      console.log("El menú ha cambiado, actualizando las opciones disponibles pero manteniendo los pedidos existentes");
+      console.log("El menú ha cambiado, actualizando las opciones...");
       localStorage.setItem('menuDataHash', currentMenuHash);
       menuDataRef.current = menuData;
       
-      // Mantener los pedidos existentes, solo actualizar para añadir nuevas opciones
       setOrders(prevOrders => {
         const updatedOrders = { ...prevOrders };
-        
-        // Para cada día en el nuevo menú
         Object.keys(menuData).forEach(day => {
-          // Si es un día nuevo que no existía, inicializarlo
           if (!updatedOrders[day]) {
-            updatedOrders[day] = {
-              counts: {},
-              comments: [],
-              isExpanded: false
-            };
+            updatedOrders[day] = { counts: {}, comments: [], isExpanded: false };
           }
-          
-          // Asegurarnos de que todas las opciones del nuevo menú estén inicializadas
           menuData[day].forEach(option => {
-            // Si la opción no existe en los pedidos actuales, inicializarla a 0
             if (!updatedOrders[day].counts[option]) {
               updatedOrders[day].counts[option] = 0;
             }
-            // Las opciones existentes mantienen su valor
           });
         });
-        
         return updatedOrders;
       });
       
-      // Actualizar el resumen pero sin reiniciar a cero
       refreshSummary();
-      
-      // Mostrar notificación de actualización
       setMenuResetNotification(true);
-      // Ocultar la notificación después de 5 segundos
       setTimeout(() => setMenuResetNotification(false), 5000);
     }
-  }, [menuData, currentUser]);
+  }, [menuData, currentUser, refreshSummary]); // Added refreshSummary
 
   // Obtener la fecha de inicio de la semana actual
   const getWeekStart = () => {
     const now = new Date()
-    // Si es viernes después de las 00:00, consideramos que es para la próxima semana
     if (now.getDay() === 5) {
-      // Avanzamos al próximo lunes
       const nextMonday = new Date(now)
-      nextMonday.setDate(now.getDate() + 3) // +3 días desde el viernes llega al lunes
+      nextMonday.setDate(now.getDate() + 3)
       return nextMonday.toISOString().split('T')[0]
     } else {
-      // Para cualquier otro día, usamos el lunes de la semana actual
       const dayOfWeek = now.getDay()
       const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
       return new Date(now.setDate(diff)).toISOString().split('T')[0]
@@ -256,15 +306,14 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'menu_orders',
           filter: `week_start=eq.${getWeekStart()}&user_name=eq.${currentUser || ''}`
         },
-        async (payload: any) => {
+        // Use the imported type for payload
+        async (payload: RealtimePostgresChangesPayload<{ [key: string]: any }>) => {
           console.log('Cambio en pedidos del usuario detectado:', payload.eventType, payload)
           
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             if (payload.new) {
               const { day, option, count, comments } = payload.new
               console.log(`Actualizando ${day}, opción: ${option}, cantidad: ${count}`);
-              
-              // Actualizar el estado local directamente con los nuevos datos
               setOrders(prev => ({
                 ...prev,
                 [day]: {
@@ -288,7 +337,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         console.log("Estado de suscripción de pedidos del usuario:", status);
       })
 
-    // Suscripción para actualizaciones de TODOS los pedidos (para el resumen general)
+    // Suscripción para actualizaciones de TODOS los pedidos
     const globalChannel = supabase.channel('global_orders_changes')
       .on(
         'postgres_changes',
@@ -298,18 +347,15 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'menu_orders',
           filter: `week_start=eq.${getWeekStart()}`
         },
-        async (payload: any) => {
+        // Use the imported type and the specific shape for 'new'
+        async (payload: RealtimePostgresChangesPayload<OrderPayloadNew>) => {
           console.log('Cambio global en pedidos detectado:', payload.eventType, payload)
-          
-          // Actualizar automáticamente el resumen cuando hay cambios en los pedidos
           setSummaryNeedsUpdate(true);
-          setLastGlobalUpdate(new Date());
-          
-          // Actualizar el resumen inmediatamente en vez de esperar
           await refreshSummary();
           
-          // Si el cambio no es del usuario actual, mostrar una notificación
-          if (payload.new && payload.new.user_name !== currentUser) {
+          // Assert the type of payload.new within the condition
+          const newPayload = payload.new as OrderPayloadNew | undefined;
+          if (newPayload && newPayload.user_name !== currentUser) {
             // Mostrar una notificación temporal
             const notification = document.createElement('div');
             notification.className = 'fixed bottom-4 right-4 bg-blue-100 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl z-50 animate-fadeIn';
@@ -323,7 +369,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
             `;
             document.body.appendChild(notification);
             
-            // Eliminar la notificación después de 2 segundos
             setTimeout(() => {
               notification.classList.add('animate-fadeOut');
               setTimeout(() => notification.remove(), 500);
@@ -345,14 +390,12 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'order_summaries',
           filter: `week_start=eq.${getWeekStart()}&user_name=eq.general`
         },
-        async (payload: any) => {
+        // Use the imported type for payload
+        async (payload: RealtimePostgresChangesPayload<{ summary?: OrderSummary }>) => {
           console.log('Cambio en el resumen general detectado:', payload.eventType, payload);
-          
-          // Actualizar el resumen si alguien lo actualizó
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            if (payload.new && payload.new.summary) {
+            if (payload.new?.summary) {
               console.log('Actualizando resumen desde la base de datos');
-              // Actualizamos el resumen con los datos recibidos
               setOrderSummary(payload.new.summary);
               setSummaryNeedsUpdate(false);
               lastSummaryUpdateRef.current = new Date();
@@ -401,7 +444,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       summaryChannel.unsubscribe();
       clearInterval(autoUpdateInterval);
     }
-  }, [currentUser, menuData])
+  }, [currentUser, menuData, initializeOrders, refreshSummary, setOrderSummary, summaryNeedsUpdate]) 
 
   const handleIncrement = async (day: string, option: string) => {
     if (!currentUser) {
@@ -687,84 +730,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         isExpanded: !prev[day].isExpanded
       }
     }))
-    setActiveDay(prev => prev === day ? null : day)
-  }
-
-  // Función para refrescar el resumen sin necesidad de generar y guardar
-  const refreshSummary = async () => {
-    try {
-      // Obtener TODOS los pedidos de la semana actual
-      const { data: latestData, error: fetchError } = await supabase
-        .from('menu_orders')
-        .select('*')
-        .eq('week_start', getWeekStart())
-
-      if (fetchError) throw fetchError
-
-      // Construimos el resumen con los datos más recientes
-      const updatedOrders = { ...initializeOrders(menuData) }
-      
-      // Para mantener track de qué usuario hizo cada comentario
-      const commentsByDay = {} as Record<string, Map<string, string>>;
-      
-      if (latestData) {
-        // Inicializar mapas para comentarios por día
-        orderedDays.forEach(day => {
-          commentsByDay[day] = new Map();
-        });
-        
-        // Sumar todos los pedidos de todas las personas
-        latestData.forEach(order => {
-          if (updatedOrders[order.day]) {
-            // Si la opción no existe en updatedOrders, inicializarla
-            if (!updatedOrders[order.day].counts[order.option]) {
-              updatedOrders[order.day].counts[order.option] = 0;
-            }
-            // Sumar los pedidos de esta opción
-            updatedOrders[order.day].counts[order.option] += order.count;
-            
-            // Guardar comentarios con referencia al usuario
-            if (order.comments && Array.isArray(order.comments)) {
-              order.comments.forEach((comment: string) => {
-                const userName = order.user_name || 'Usuario';
-                
-                // Verificar si el comentario ya tiene formato "texto (usuario)"
-                const hasUserFormat = /^.+\s\([^)]+\)$/.test(comment);
-                
-                if (hasUserFormat) {
-                  // Si ya tiene el formato, usarlo directamente sin modificar
-                  const commentKey = comment; // Usar el comentario completo como clave
-                  commentsByDay[order.day].set(commentKey, comment);
-                } else {
-                  // Si no tiene el formato, añadir el nombre del usuario
-                  const commentKey = `${comment}-${userName}`;
-                  commentsByDay[order.day].set(commentKey, `${comment} (${userName})`);
-                }
-              });
-            }
-          }
-        });
-      }
-
-      // Crear el resumen con comentarios que incluyen el nombre del usuario
-      const summary = {
-        orders: Object.entries(updatedOrders).map(([day, data]) => ({
-          day,
-          counts: data.counts,
-          comments: Array.from(commentsByDay[day]?.values() || [])
-        }))
-      };
-
-      // Actualizar el estado del resumen
-      setOrderSummary(summary);
-      setSummaryNeedsUpdate(false);
-      lastSummaryUpdateRef.current = new Date();
-      
-      console.log("Resumen actualizado con éxito");
-      
-    } catch (error) {
-      console.error('Error al actualizar el resumen:', error);
-    }
   }
 
   const handleSubmit = async () => {
@@ -851,7 +816,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     }
   }
 
-  // Cargar el último resumen general al iniciar
+  // Cargar el último resumen general al iniciar (Add dependencies)
   useEffect(() => {
     const loadLastSummary = async () => {
       try {
@@ -891,52 +856,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     }
 
     loadLastSummary();
-  }, []);
-
-  const clearAllComments = async () => {
-    if (!currentUser) {
-      alert('Por favor selecciona un usuario antes de realizar esta acción');
-      return;
-    }
-    
-    // Confirmar la acción con el usuario para evitar borrados accidentales
-    const confirmDelete = confirm("¿Estás seguro de que deseas eliminar TODOS los comentarios de TODOS los usuarios? Esta acción no puede deshacerse.");
-    if (!confirmDelete) return;
-    
-    try {
-      console.log("Iniciando limpieza de todos los comentarios...");
-      
-      // Ejecutar una única operación para actualizar todos los registros de la semana actual
-      const { error: updateError, count } = await supabase
-        .from('menu_orders')
-        .update({ comments: [] })
-        .eq('week_start', getWeekStart());
-      
-      if (updateError) throw updateError;
-      
-      console.log(`Se han limpiado los comentarios de ${count || 'todos los'} registros`);
-      
-      // Actualizar la UI localmente para todos los días
-      const updatedOrders = { ...orders };
-      orderedDays.forEach(day => {
-        updatedOrders[day] = {
-          ...updatedOrders[day],
-          comments: [] // Limpiar comentarios localmente
-        };
-      });
-      
-      setOrders(updatedOrders);
-      
-      // Actualizar el resumen general
-      await refreshSummary();
-      
-      alert('Todos los comentarios han sido eliminados correctamente');
-      
-    } catch (error) {
-      console.error('Error al eliminar comentarios:', error);
-      alert('Ocurrió un error al eliminar los comentarios. Por favor, intenta de nuevo.');
-    }
-  };
+  }, [refreshSummary, setOrderSummary]); // Added refreshSummary, setOrderSummary
 
   if (loading) {
     return (
