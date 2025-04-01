@@ -36,21 +36,6 @@ interface OrderSummary {
   }>
 }
 
-interface SupabasePayload {
-  new: {
-    day: string
-    option: string
-    count: number
-    comments: string[]
-  }
-}
-
-interface BroadcastMessage {
-  type: 'RELOAD_PAGE'
-  timestamp: number
-}
-
-// Define the expected shape of the 'new' object in the payload
 interface OrderPayloadNew {
   day: string;
   option: string;
@@ -306,7 +291,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'menu_orders',
           filter: `week_start=eq.${getWeekStart()}&user_name=eq.${currentUser || ''}`
         },
-        // Use the imported type for payload
+        // Use generic object type for user channel payload if specific shape isn't needed
         async (payload: RealtimePostgresChangesPayload<{ [key: string]: any }>) => {
           console.log('Cambio en pedidos del usuario detectado:', payload.eventType, payload)
           
@@ -347,7 +332,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'menu_orders',
           filter: `week_start=eq.${getWeekStart()}`
         },
-        // Use the imported type and the specific shape for 'new'
+        // Use specific OrderPayloadNew type here
         async (payload: RealtimePostgresChangesPayload<OrderPayloadNew>) => {
           console.log('Cambio global en pedidos detectado:', payload.eventType, payload)
           setSummaryNeedsUpdate(true);
@@ -389,7 +374,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'order_summaries',
           filter: `week_start=eq.${getWeekStart()}&user_name=eq.general`
         },
-        // Use the imported type for payload
+        // Use specific summary type here
         async (payload: RealtimePostgresChangesPayload<{ summary?: OrderSummary }>) => {
           console.log('Cambio en el resumen general detectado:', payload.eventType, payload);
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
@@ -441,7 +426,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       userChannel.unsubscribe();
       globalChannel.unsubscribe();
       summaryChannel.unsubscribe();
-      clearInterval(autoUpdateInterval);
+      // clearInterval(autoUpdateInterval);
     }
   }, [currentUser, menuData, initializeOrders, refreshSummary, setOrderSummary, summaryNeedsUpdate]) 
 
