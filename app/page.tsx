@@ -261,7 +261,7 @@ export default function Home() {
                         const { data: weeksData, error: weeksError } = await supabase
                           .from('menu_orders')
                           .select('week_start')
-                          .order('week_start', { ascending: false }) as { data: { week_start: string }[] | null; error: any };
+                          .order('week_start', { ascending: false });
                         
                         if (weeksError) throw weeksError;
                         

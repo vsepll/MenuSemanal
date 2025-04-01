@@ -281,7 +281,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     // Cargar pedidos iniciales
     loadOrders();
 
-    // Suscripción para actualizaciones en tiempo real para el usuario actual
+    // Suscripción usuario actual
     const userChannel = supabase.channel('user_orders_changes')
       .on(
         'postgres_changes',
@@ -291,13 +291,15 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'menu_orders',
           filter: `week_start=eq.${getWeekStart()}&user_name=eq.${currentUser || ''}`
         },
-        // Use generic object type for user channel payload if specific shape isn't needed
-        async (payload: RealtimePostgresChangesPayload<{ [key: string]: any }>) => {
+        // Use specific OrderPayloadNew type for user channel payload
+        async (payload: RealtimePostgresChangesPayload<OrderPayloadNew>) => {
           console.log('Cambio en pedidos del usuario detectado:', payload.eventType, payload)
           
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            if (payload.new) {
-              const { day, option, count, comments } = payload.new
+            // Assert payload.new before accessing properties
+            const newPayload = payload.new as OrderPayloadNew | undefined;
+            if (newPayload) {
+              const { day, option, count, comments } = newPayload
               console.log(`Actualizando ${day}, opción: ${option}, cantidad: ${count}`);
               setOrders(prev => ({
                 ...prev,
@@ -307,14 +309,13 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
                     ...prev[day].counts,
                     [option]: count
                   },
-                  comments: comments || prev[day].comments
+                  comments: comments || prev[day]?.comments || [] // Add fallback for comments
                 }
               }))
             }
           } else if (payload.eventType === 'DELETE') {
-            // Si se ha eliminado un pedido, recargar todos los pedidos para sincronizar
             console.log("Pedido eliminado, recargando todos los pedidos");
-            await loadOrders();
+            await loadOrders(); // Ensure loadOrders is defined or passed correctly
           }
         }
       )
@@ -422,13 +423,14 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       }
     }, 60000);
 
+    // Cleanup
     return () => {
       userChannel.unsubscribe();
       globalChannel.unsubscribe();
       summaryChannel.unsubscribe();
-      // clearInterval(autoUpdateInterval);
+      clearInterval(autoUpdateInterval); // Uncomment clearInterval
     }
-  }, [currentUser, menuData, initializeOrders, refreshSummary, setOrderSummary, summaryNeedsUpdate]) 
+  }, [currentUser, menuData, initializeOrders, refreshSummary, setOrderSummary, summaryNeedsUpdate]) // Ensure loadOrders is included if used in effect
 
   const handleIncrement = async (day: string, option: string) => {
     if (!currentUser) {
