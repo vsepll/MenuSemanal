@@ -3,9 +3,19 @@
 import { useEffect, useState } from "react"
 import { supabase } from "../lib/supabase"
 
-export default function MenuDataLoader({ setMenuData }) {
+// Definimos el tipo para el objeto de menú
+interface MenuDataType {
+  [key: string]: string[]
+}
+
+// Definimos el tipo para las props del componente
+interface MenuDataLoaderProps {
+  setMenuData: (data: MenuDataType) => void;
+}
+
+export default function MenuDataLoader({ setMenuData }: MenuDataLoaderProps) {
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadMenuData = async () => {
@@ -27,7 +37,7 @@ export default function MenuDataLoader({ setMenuData }) {
         }
       } catch (error) {
         console.error("Error loading menu data:", error)
-        setError(error.message)
+        setError(error instanceof Error ? error.message : "Error desconocido");
       } finally {
         setLoading(false)
       }
