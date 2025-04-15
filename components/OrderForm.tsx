@@ -21,7 +21,6 @@ interface MenuCount {
 interface DayOrder {
   counts: MenuCount
   comments: string[]
-  isExpanded: boolean
 }
 
 interface DayOrders {
@@ -44,6 +43,20 @@ interface OrderPayloadNew {
   user_name?: string; // Make user_name optional just in case
 }
 
+// Mover getWeekStart fuera del componente
+const getWeekStart = () => {
+  const now = new Date()
+  if (now.getDay() === 5) { // Si es viernes
+    const nextMonday = new Date(now)
+    nextMonday.setDate(now.getDate() + 3)
+    return nextMonday.toISOString().split('T')[0]
+  } else { // Cualquier otro día
+    const dayOfWeek = now.getDay() // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) // Ajustar al Lunes
+    return new Date(now.setDate(diff)).toISOString().split('T')[0]
+  }
+}
+
 export default function OrderForm({ menuData, setOrderSummary, currentUser }: OrderFormProps) {
   // Wrap orderedDays in useMemo
   const orderedDays = useMemo(() => ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], []);
@@ -62,7 +75,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           return counts
         }, {} as MenuCount),
         comments: [],
-        isExpanded: false
       }
       return acc
     }, {} as DayOrders);
@@ -75,6 +87,14 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
   const [menuResetNotification, setMenuResetNotification] = useState(false)
   const [summaryNeedsUpdate, setSummaryNeedsUpdate] = useState(false)
   const lastSummaryUpdateRef = useRef<Date>(new Date());
+  
+  // Nuevo estado para manejar los días expandidos
+  const [expandedDays, setExpandedDays] = useState<{[day: string]: boolean}>(
+    orderedDays.reduce((acc, day) => {
+      acc[day] = false; // Inicialmente todos cerrados
+      return acc;
+    }, {} as {[day: string]: boolean})
+  );
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -88,13 +108,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
 
       // Construimos el resumen con los datos más recientes
       const newOrders = initializeOrders(menuDataRef.current) // Use ref for current menuData
-      
-      // Preservar el estado de expansión de los días actuales
-      Object.keys(orders).forEach(day => {
-        if (newOrders[day]) {
-          newOrders[day].isExpanded = orders[day].isExpanded;
-        }
-      });
       
       const commentsByDay = {} as Record<string, Map<string, string>>;
       
@@ -144,15 +157,12 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       setSummaryNeedsUpdate(false);
       lastSummaryUpdateRef.current = new Date();
       
-      // Actualizar el estado de órdenes preservando el estado de expansión
-      setOrders(newOrders);
-      
       console.log("Resumen actualizado con éxito");
       
     } catch (error) {
       console.error('Error al actualizar el resumen:', error);
     }
-  }, [initializeOrders, orderedDays, setOrderSummary, orders]); // Now depends on orders too
+  }, [initializeOrders, orderedDays, setOrderSummary]);
 
   // Efecto para actualizar los pedidos cuando cambia el menú
   useEffect(() => {
@@ -176,7 +186,8 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         const updatedOrders = { ...prevOrders };
         Object.keys(menuData).forEach(day => {
           if (!updatedOrders[day]) {
-            updatedOrders[day] = { counts: {}, comments: [], isExpanded: false };
+            // Solo inicializar counts y comments, no isExpanded
+            updatedOrders[day] = { counts: {}, comments: [] }; 
           }
           menuData[day].forEach(option => {
             if (!updatedOrders[day].counts[option]) {
@@ -193,20 +204,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
     }
   }, [menuData, currentUser, refreshSummary]); // Added refreshSummary
 
-  // Obtener la fecha de inicio de la semana actual
-  const getWeekStart = () => {
-    const now = new Date()
-    if (now.getDay() === 5) {
-      const nextMonday = new Date(now)
-      nextMonday.setDate(now.getDate() + 3)
-      return nextMonday.toISOString().split('T')[0]
-    } else {
-      const dayOfWeek = now.getDay()
-      const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
-      return new Date(now.setDate(diff)).toISOString().split('T')[0]
-    }
-  }
-
   // Cargar pedidos existentes
   useEffect(() => {
     const loadOrders = async () => {
@@ -218,12 +215,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       try {
         console.log("Cargando pedidos existentes para la semana:", getWeekStart(), "usuario:", currentUser);
         
-        // Guardar el estado de expansión actual
-        const currentExpandedState = {} as {[day: string]: boolean};
-        Object.keys(orders).forEach(day => {
-          currentExpandedState[day] = orders[day].isExpanded;
-        });
-        
         // Intentar cargar datos de localStorage primero como respaldo
         let localOrdersLoaded = false;
         try {
@@ -232,13 +223,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
             const parsedOrders = JSON.parse(savedOrdersData);
             if (parsedOrders && Object.keys(parsedOrders).length > 0) {
               console.log("Se encontraron datos locales guardados, usando como respaldo inicial");
-              
-              // Preservar el estado de expansión
-              Object.keys(parsedOrders).forEach(day => {
-                if (currentExpandedState[day] !== undefined) {
-                  parsedOrders[day].isExpanded = currentExpandedState[day];
-                }
-              });
               
               setOrders(parsedOrders);
               localOrdersLoaded = true;
@@ -272,13 +256,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           
           // Inicializar con el menú actual (todos en 0)
           const newOrders = initializeOrders(menuData);
-          
-          // Preservar el estado de expansión
-          Object.keys(newOrders).forEach(day => {
-            if (currentExpandedState[day] !== undefined) {
-              newOrders[day].isExpanded = currentExpandedState[day];
-            }
-          });
           
           // Actualizar los valores con los datos cargados
           data.forEach(order => {
@@ -340,8 +317,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
                     ...prev[day].counts,
                     [option]: count
                   },
-                  comments: comments || prev[day]?.comments || [], // Add fallback for comments
-                  isExpanded: prev[day]?.isExpanded || false // Preservar estado de expansión
+                  comments: comments || prev[day]?.comments || [] // Add fallback for comments
                 }
               }))
             }
@@ -368,8 +344,9 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         async (payload: RealtimePostgresChangesPayload<OrderPayloadNew>) => {
           console.log('Cambio global en pedidos detectado:', payload.eventType, payload)
           setSummaryNeedsUpdate(true);
-          // No actualizar el resumen inmediatamente, solo marcar que necesita actualizarse
-          // await refreshSummary(); <- Comentar o eliminar esta línea
+          
+          // Volver a activar la actualización del resumen cuando hay un cambio global
+          await refreshSummary(); 
           
           const newPayload = payload.new as OrderPayloadNew | undefined;
           if (newPayload && newPayload.user_name !== currentUser) {
@@ -741,13 +718,10 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
   }
 
   const toggleDay = (day: string) => {
-    setOrders(prev => ({
+    setExpandedDays(prev => ({
       ...prev,
-      [day]: {
-        ...prev[day],
-        isExpanded: !prev[day].isExpanded
-      }
-    }))
+      [day]: !prev[day]
+    }));
   }
 
   const handleSubmit = async () => {
@@ -1030,7 +1004,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
                 </span>
               )}
               <svg 
-                className={`w-5 h-5 text-gray-400 transition-transform ${orders[day].isExpanded ? 'transform rotate-180' : ''}`}
+                className={`w-5 h-5 text-gray-400 transition-transform ${expandedDays[day] ? 'transform rotate-180' : ''}`}
                 fill="none" 
                 stroke="currentColor" 
                 viewBox="0 0 24 24"
@@ -1040,7 +1014,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
             </div>
           </button>
 
-          {orders[day].isExpanded && (
+          {expandedDays[day] && (
             <div className="p-4 border-t border-gray-100 space-y-4">
               <div className="grid gap-4">
                 {menuData[day]?.map((option) => (
