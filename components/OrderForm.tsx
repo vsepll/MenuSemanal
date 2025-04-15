@@ -333,11 +333,9 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'menu_orders',
           filter: `week_start=eq.${getWeekStart()}`
         },
-        // Use specific OrderPayloadNew type here
         async (payload: RealtimePostgresChangesPayload<OrderPayloadNew>) => {
           console.log('Cambio global en pedidos detectado:', payload.eventType, payload)
           setSummaryNeedsUpdate(true);
-          await refreshSummary();
           
           const newPayload = payload.new as OrderPayloadNew | undefined;
           if (newPayload && newPayload.user_name !== currentUser) {
