@@ -89,6 +89,13 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       // Construimos el resumen con los datos más recientes
       const newOrders = initializeOrders(menuDataRef.current) // Use ref for current menuData
       
+      // Preservar el estado de expansión de los días actuales
+      Object.keys(orders).forEach(day => {
+        if (newOrders[day]) {
+          newOrders[day].isExpanded = orders[day].isExpanded;
+        }
+      });
+      
       const commentsByDay = {} as Record<string, Map<string, string>>;
       
       if (latestData) {
@@ -137,12 +144,15 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       setSummaryNeedsUpdate(false);
       lastSummaryUpdateRef.current = new Date();
       
+      // Actualizar el estado de órdenes preservando el estado de expansión
+      setOrders(newOrders);
+      
       console.log("Resumen actualizado con éxito");
       
     } catch (error) {
       console.error('Error al actualizar el resumen:', error);
     }
-  }, [initializeOrders, orderedDays, setOrderSummary]); // Now depends on memoized orderedDays
+  }, [initializeOrders, orderedDays, setOrderSummary, orders]); // Now depends on orders too
 
   // Efecto para actualizar los pedidos cuando cambia el menú
   useEffect(() => {
@@ -208,6 +218,12 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       try {
         console.log("Cargando pedidos existentes para la semana:", getWeekStart(), "usuario:", currentUser);
         
+        // Guardar el estado de expansión actual
+        const currentExpandedState = {} as {[day: string]: boolean};
+        Object.keys(orders).forEach(day => {
+          currentExpandedState[day] = orders[day].isExpanded;
+        });
+        
         // Intentar cargar datos de localStorage primero como respaldo
         let localOrdersLoaded = false;
         try {
@@ -216,6 +232,14 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
             const parsedOrders = JSON.parse(savedOrdersData);
             if (parsedOrders && Object.keys(parsedOrders).length > 0) {
               console.log("Se encontraron datos locales guardados, usando como respaldo inicial");
+              
+              // Preservar el estado de expansión
+              Object.keys(parsedOrders).forEach(day => {
+                if (currentExpandedState[day] !== undefined) {
+                  parsedOrders[day].isExpanded = currentExpandedState[day];
+                }
+              });
+              
               setOrders(parsedOrders);
               localOrdersLoaded = true;
               
@@ -248,6 +272,13 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           
           // Inicializar con el menú actual (todos en 0)
           const newOrders = initializeOrders(menuData);
+          
+          // Preservar el estado de expansión
+          Object.keys(newOrders).forEach(day => {
+            if (currentExpandedState[day] !== undefined) {
+              newOrders[day].isExpanded = currentExpandedState[day];
+            }
+          });
           
           // Actualizar los valores con los datos cargados
           data.forEach(order => {
@@ -309,7 +340,8 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
                     ...prev[day].counts,
                     [option]: count
                   },
-                  comments: comments || prev[day]?.comments || [] // Add fallback for comments
+                  comments: comments || prev[day]?.comments || [], // Add fallback for comments
+                  isExpanded: prev[day]?.isExpanded || false // Preservar estado de expansión
                 }
               }))
             }
@@ -336,6 +368,8 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         async (payload: RealtimePostgresChangesPayload<OrderPayloadNew>) => {
           console.log('Cambio global en pedidos detectado:', payload.eventType, payload)
           setSummaryNeedsUpdate(true);
+          // No actualizar el resumen inmediatamente, solo marcar que necesita actualizarse
+          // await refreshSummary(); <- Comentar o eliminar esta línea
           
           const newPayload = payload.new as OrderPayloadNew | undefined;
           if (newPayload && newPayload.user_name !== currentUser) {
