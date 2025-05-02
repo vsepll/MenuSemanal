@@ -89,12 +89,15 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
   const lastSummaryUpdateRef = useRef<Date>(new Date());
   
   // Nuevo estado para manejar los días expandidos
-  const [expandedDays, setExpandedDays] = useState<{[day: string]: boolean}>(
-    orderedDays.reduce((acc, day) => {
-      acc[day] = false; // Inicialmente todos cerrados
-      return acc;
-    }, {} as {[day: string]: boolean})
-  );
+  const getExpandedDaysFromStorage = () => {
+    if (!currentUser) return orderedDays.reduce((acc, day) => ({ ...acc, [day]: false }), {});
+    const key = `expandedDays_${getWeekStart()}_${currentUser}`;
+    const saved = localStorage.getItem(key);
+    if (saved) return JSON.parse(saved);
+    return orderedDays.reduce((acc, day) => ({ ...acc, [day]: false }), {});
+  };
+
+  const [expandedDays, setExpandedDays] = useState<{[day: string]: boolean}>(() => getExpandedDaysFromStorage());
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -344,30 +347,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         async (payload: RealtimePostgresChangesPayload<OrderPayloadNew>) => {
           console.log('Cambio global en pedidos detectado:', payload.eventType, payload)
           setSummaryNeedsUpdate(true);
-          
-          // Volver a activar la actualización del resumen cuando hay un cambio global
-          await refreshSummary(); 
-          
-          const newPayload = payload.new as OrderPayloadNew | undefined;
-          if (newPayload && newPayload.user_name !== currentUser) {
-            // Mostrar una notificación temporal
-            const notification = document.createElement('div');
-            notification.className = 'fixed bottom-4 right-4 bg-blue-100 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl z-50 animate-fadeIn';
-            notification.innerHTML = `
-              <div class="flex items-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-                <span>Un pedido ha sido actualizado por otro usuario</span>
-              </div>
-            `;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-              notification.classList.add('animate-fadeOut');
-              setTimeout(() => notification.remove(), 500);
-            }, 2000);
-          }
+          await refreshSummary();
         }
       )
       .subscribe((status) => {
@@ -384,7 +364,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           table: 'order_summaries',
           filter: `week_start=eq.${getWeekStart()}&user_name=eq.general`
         },
-        // Use specific summary type here
         async (payload: RealtimePostgresChangesPayload<{ summary?: OrderSummary }>) => {
           console.log('Cambio en el resumen general detectado:', payload.eventType, payload);
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
@@ -393,25 +372,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
               setOrderSummary(payload.new.summary);
               setSummaryNeedsUpdate(false);
               lastSummaryUpdateRef.current = new Date();
-              
-              // Mostrar una notificación temporal
-              const notification = document.createElement('div');
-              notification.className = 'fixed bottom-4 right-4 bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl z-50 animate-fadeIn';
-              notification.innerHTML = `
-                <div class="flex items-center gap-2">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                  <span>Resumen general actualizado por otro usuario</span>
-                </div>
-              `;
-              document.body.appendChild(notification);
-              
-              // Eliminar la notificación después de 3 segundos
-              setTimeout(() => {
-                notification.classList.add('animate-fadeOut');
-                setTimeout(() => notification.remove(), 500);
-              }, 3000);
             }
           }
         }
@@ -722,7 +682,14 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       ...prev,
       [day]: !prev[day]
     }));
-  }
+  };
+
+  // Persistir expandedDays en localStorage cuando cambie
+  useEffect(() => {
+    if (!currentUser) return;
+    const key = `expandedDays_${getWeekStart()}_${currentUser}`;
+    localStorage.setItem(key, JSON.stringify(expandedDays));
+  }, [expandedDays, currentUser]);
 
   const handleSubmit = async () => {
     if (!currentUser) {
@@ -966,23 +933,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
         </div>
       </div>
 
-      {summaryNeedsUpdate && (
-        <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-xl flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span>Hay nuevos pedidos de otros usuarios. El resumen general necesita actualizarse.</span>
-          </div>
-          <button 
-            onClick={refreshSummary}
-            className="px-3 py-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded-lg text-sm"
-          >
-            Actualizar ahora
-          </button>
-        </div>
-      )}
-      
       {orderedDays.map((day) => (
         <div key={day} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <button
