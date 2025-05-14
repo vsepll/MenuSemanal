@@ -254,55 +254,7 @@ export default function Home() {
                     <p className="text-sm text-gray-500">Sube el archivo Excel con las opciones del menú</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={async () => {
-                      try {
-                        const { data: weeksData, error: weeksError } = await supabase
-                          .from('menu_orders')
-                          .select('week_start')
-                          .order('week_start', { ascending: false });
-                        
-                        if (weeksError) throw weeksError;
-                        
-                        const uniqueWeeks = Array.from(new Set(weeksData?.map(item => item.week_start) || []));
-                        
-                        const now = new Date();
-                        const dayOfWeek = now.getDay();
-                        const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-                        const currentWeek = new Date(now.setDate(diff)).toISOString().split('T')[0];
-                        
-                        const { count, error: countError } = await supabase
-                          .from('menu_orders')
-                          .select('*', { count: 'exact', head: true })
-                          .eq('week_start', currentWeek);
-                        
-                        if (countError) throw countError;
-                        
-                        alert(`Diagnóstico de semanas:\n\nSemana actual calculada: ${currentWeek}\nRegistros en semana actual: ${count || 0}\n\nSemanas disponibles en Supabase:\n${uniqueWeeks.join('\n')}`);
-                        
-                      } catch (e) {
-                        const error = e as Error;
-                        console.error("Error en diagnóstico:", error);
-                        alert("Error al realizar diagnóstico: " + (error.message || "Error desconocido"));
-                      }
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 rounded-xl hover:bg-purple-100 transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                    <span>Diagnóstico</span>
-                  </button>
-                  <button 
-                    onClick={() => loadLatestMenu()} 
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-100 transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <span>Actualizar Menú</span>
-                  </button>
+                <div className="flex items-center gap-3"> 
                   <button 
                     onClick={() => setShowUploader(!showUploader)} 
                     className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors"
@@ -327,16 +279,6 @@ export default function Home() {
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900">Realizar Pedido</h2>
                   <p className="text-sm text-gray-500">Selecciona tus opciones para cada día</p>
-                </div>
-              </div>
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-700">
-                <div className="flex gap-2 items-center">
-                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>
-                    Importante: Al cargar un nuevo menú semanal, todos los contadores de pedidos se reiniciarán automáticamente a cero.
-                  </span>
                 </div>
               </div>
               <OrderForm menuData={menuData} setOrderSummary={setOrderSummary} currentUser={currentUser} />

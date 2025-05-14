@@ -184,12 +184,6 @@ export default function OrderSummary({ orderSummary }: OrderSummaryProps) {
         </div>
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={() => setShowPreview(!showPreview)}
-            className="px-4 py-2.5 bg-white text-gray-700 rounded-xl border border-gray-200 hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow flex items-center gap-2 text-sm font-medium"
-          >
-            {showPreview ? '👁️ Ocultar vista' : '👁️ Mostrar vista'}
-          </button>
-          <button
             onClick={handleExportPDF}
             disabled={exporting}
             className="px-4 py-2.5 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-2 text-sm font-medium disabled:opacity-50"
@@ -209,34 +203,6 @@ export default function OrderSummary({ orderSummary }: OrderSummaryProps) {
                 </svg>
                 <span>Guardar PDF</span>
               </>
-            )}
-          </button>
-          <button
-            onClick={handleWhatsAppShare}
-            className="px-4 py-2.5 bg-green-500 text-white rounded-xl hover:bg-green-600 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-2 text-sm font-medium"
-          >
-            <span>Compartir</span>
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM17 13H13V17H11V13H7V11H11V7H13V11H17V13Z"/>
-            </svg>
-          </button>
-          <button
-            onClick={handleCopy}
-            className={`px-4 py-2.5 rounded-xl transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-2 text-sm font-medium ${
-              copied 
-                ? 'bg-blue-100 text-blue-800 border border-blue-200' 
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-          >
-            <span>{copied ? '¡Copiado!' : 'Copiar pedido'}</span>
-            {copied ? (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-              </svg>
             )}
           </button>
         </div>

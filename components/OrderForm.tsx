@@ -918,7 +918,6 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          <span>Recargar mis pedidos</span>
         </button>
       </div>
 
@@ -1049,16 +1048,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
       ))}
 
       <div className="mt-8 flex flex-wrap gap-4 justify-end">
-        <button
-          onClick={refreshSummary}
-          data-refresh-button
-          className="px-5 py-3 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-xl hover:from-gray-600 hover:to-gray-700 transition-all duration-200 flex items-center gap-2 shadow-md"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          <span>Actualizar Resumen</span>
-        </button>
+
         <button
           onClick={handleSubmit}
           className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 flex items-center gap-2 shadow-md"
@@ -1066,7 +1056,7 @@ export default function OrderForm({ menuData, setOrderSummary, currentUser }: Or
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
           </svg>
-          <span>Generar Resumen</span>
+          <span>Descargar Resumen</span>
         </button>
       </div>
     </div>

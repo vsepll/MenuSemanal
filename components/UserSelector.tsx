@@ -31,7 +31,7 @@ export default function UserSelector({ onSelectUser }: UserSelectorProps) {
     "facu",
     "jose",
     "fede",
-    "juan"
+    "tomi"
   ]
 
   useEffect(() => {
